@@ -100,17 +100,19 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if let patch = doc.patch {
             ctx.saveGState()
             ctx.interpolationQuality = .none
+            if let hole = patch.vacated {
+                NSColor.white.setFill()
+                viewRect(hole).fill()
+            }
             Renderer.drawImage(ctx, patch.image, in: viewRect(patch.rect))
             ctx.restoreGState()
             outline(viewRect(patch.rect), color: selectionColor, dashed: true)
-            for h in Handle.allCases {
-                let p = h.point(in: viewRect(patch.rect))
-                let r = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
-                NSColor.white.setFill(); r.fill()
-                selectionColor.setStroke(); NSBezierPath(rect: r).stroke()
-            }
+            drawHandles(viewRect(patch.rect))
         }
-        if let s = selection { outline(viewRect(s), color: selectionColor, dashed: true) }
+        if let s = selection {
+            outline(viewRect(s), color: selectionColor, dashed: true)
+            if model?.tool == .select, doc.patch == nil { drawHandles(viewRect(s)) }
+        }
         if let c = cropRect { outline(viewRect(c), color: selectionColor, dashed: true) }
         if let d = draftRect { outline(viewRect(d), color: model?.color.nsColor ?? .red, dashed: false) }
         if let tool = model?.tool, let m = model, dragStart != nil {
@@ -160,6 +162,23 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     @objc private func confirmPatch() { finishPatch() }
 
+    private func drawHandles(_ rect: CGRect) {
+        for h in Handle.allCases {
+            let p = h.point(in: rect)
+            let r = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
+            NSColor.white.setFill(); r.fill()
+            selectionColor.setStroke(); NSBezierPath(rect: r).stroke()
+        }
+    }
+
+    private func selectionHandle(at p: CGPoint, in rect: CGRect) -> Handle? {
+        let slop = 7 / zoom
+        return Handle.allCases.first { h in
+            let q = h.point(in: rect)
+            return abs(q.x - p.x) <= slop && abs(q.y - p.y) <= slop
+        }
+    }
+
     private func outline(_ r: CGRect, color: NSColor, dashed: Bool) {
         let path = NSBezierPath(rect: r)
         path.lineWidth = 1.5
@@ -185,13 +204,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .select:
             if let patch = doc.patch, patch.rect.contains(p) {
                 patchDrag = .move(grab: p, origin: patch.rect); return
-            } else if let s = selection, s.contains(p), let img = doc.copyRegion(s) {
-                // dragging a selection lifts a copy of it, leaving the original in place
-                doc.beginPatch(image: img, rect: s.integral)
-                selection = nil
-                patchDrag = .move(grab: p, origin: s.integral)
-                needsDisplay = true
-                return
+            } else if doc.patch == nil, let s = selection {
+                // grabbing the selection (inside or on a handle) lifts it off the picture, leaving white behind
+                let handle = selectionHandle(at: p, in: s)
+                if (handle != nil || s.contains(p)), doc.liftSelection(s), let patch = doc.patch {
+                    selection = nil
+                    patchDrag = handle.map { .resize($0, patch.rect) } ?? .move(grab: p, origin: patch.rect)
+                    needsDisplay = true
+                    return
+                }
             }
             selection = nil
         case .text:
@@ -298,6 +319,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         switch key {
         case "c": copySelection(); return true
         case "v": pasteImage(); return true
+        case "s": model?.saveAs(); return true
         case "a": selection = doc?.bounds; model?.tool = .select; needsDisplay = true; return true
         case "z": event.modifierFlags.contains(.shift) ? redo() : undo(); return true
         default: return false

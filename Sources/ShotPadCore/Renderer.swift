@@ -29,6 +29,10 @@ public enum Renderer {
         drawImage(ctx, base, in: CGRect(x: 0, y: 0, width: w, height: h))
         for a in annotations { draw(a, in: ctx) }
         if let patch {
+            if let hole = patch.vacated {
+                ctx.setFillColor(RGBA.white.cgColor)
+                ctx.fill(hole.integral)
+            }
             ctx.saveGState()
             ctx.interpolationQuality = .none
             drawImage(ctx, patch.image, in: patch.rect.integral)

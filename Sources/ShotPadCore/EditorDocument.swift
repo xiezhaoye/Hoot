@@ -75,10 +75,23 @@ public final class EditorDocument {
         patch = Patch(image: image, rect: rect)
     }
 
+    /// Lifts `rect` off the picture as a floating patch and leaves white behind (cut semantics).
+    @discardableResult
+    public func liftSelection(_ rect: CGRect) -> Bool {
+        commitPatch()
+        let r = rect.integral.clamped(to: bounds)
+        guard r.width >= 1, r.height >= 1, let img = copyRegion(r) else { return false }
+        patch = Patch(image: img, rect: r, vacated: r)
+        return true
+    }
+
     /// Centres a patch on `point`, keeping it inside the canvas where possible.
+    /// A picture larger than the canvas is scaled down to fit so its handles stay reachable.
     public func paste(_ image: CGImage, centeredAt point: CGPoint) {
-        var r = CGRect(x: point.x - CGFloat(image.width) / 2, y: point.y - CGFloat(image.height) / 2,
-                       width: CGFloat(image.width), height: CGFloat(image.height))
+        var w = CGFloat(image.width), h = CGFloat(image.height)
+        let fit = min(1, size.width / w, size.height / h)
+        w = max(1, (w * fit).rounded()); h = max(1, (h * fit).rounded())
+        var r = CGRect(x: point.x - w / 2, y: point.y - h / 2, width: w, height: h)
         r.origin.x = max(0, min(r.origin.x, size.width - r.width))
         r.origin.y = max(0, min(r.origin.y, size.height - r.height))
         beginPatch(image: image, rect: r.integral)

@@ -28,10 +28,13 @@ public enum Handle: CaseIterable {
 public struct Patch {
     public var image: CGImage
     public var rect: CGRect
+    /// Area the pixels were lifted from; it is blanked to white while the patch floats.
+    public var vacated: CGRect?
 
-    public init(image: CGImage, rect: CGRect) {
+    public init(image: CGImage, rect: CGRect, vacated: CGRect? = nil) {
         self.image = image
         self.rect = rect
+        self.vacated = vacated
     }
 
     /// Dragging `handle` of `original` to `point`. The opposite edge stays fixed and

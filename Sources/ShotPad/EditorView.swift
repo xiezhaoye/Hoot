@@ -43,59 +43,68 @@ struct EditorView: View {
                 toolbar
                 Divider()
                 CanvasRepresentable(model: model)
+                Divider()
+                optionsBar
             }
             if settings.historySide == .right { Divider(); historyPane }
         }
     }
 
     private var toolbar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(toolIcons, id: \.0) { tool, icon, help in
-                    Button { model.tool = tool; model.canvas?.window?.invalidateCursorRects(for: model.canvas!) } label: {
-                        if icon.hasPrefix("text:") {
-                            Text(String(icon.dropFirst(5))).font(.system(size: 15, weight: .bold, design: .serif)).frame(width: 26, height: 22)
-                        } else {
-                            Image(systemName: icon).frame(width: 26, height: 22)
-                        }
+        HStack(spacing: 4) {
+            ForEach(toolIcons, id: \.0) { tool, icon, help in
+                Button { model.tool = tool; model.canvas?.window?.invalidateCursorRects(for: model.canvas!) } label: {
+                    if icon.hasPrefix("text:") {
+                        Text(String(icon.dropFirst(5))).font(.system(size: 15, weight: .bold, design: .serif)).frame(width: 26, height: 22)
+                    } else {
+                        Image(systemName: icon).frame(width: 26, height: 22)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(model.tool == tool ? .accentColor : nil)
-                    .help(help)
                 }
-                Divider().frame(height: 22)
-                ColorPicker("", selection: $model.colorValue).labelsHidden().help("标注颜色")
-                ColorPicker("", selection: $settings.selectionColor).labelsHidden().help("选区 / 裁剪框颜色")
-                Slider(value: $model.lineWidth, in: 1...16).frame(width: 80).help("线宽 / 马赛克强度")
-                Stepper("字号 \(Int(model.fontSize))", value: $model.fontSize, in: 10...120, step: 2).font(.caption)
-                Spacer()
+                .buttonStyle(.bordered)
+                .tint(model.tool == tool ? .accentColor : nil)
+                .help(help)
             }
-            HStack(spacing: 8) {
-                Button { model.canvas?.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                    .disabled(!(model.revision >= 0 && model.doc.canUndo)).help("撤销 ⌘Z")
-                Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                    .disabled(!(model.revision >= 0 && model.doc.canRedo)).help("重做 ⇧⌘Z")
+            Spacer(minLength: 12)
+            if model.hasPatch {
+                Button("确认浮动块") { model.canvas?.finishPatch() }.buttonStyle(.borderedProminent)
+                Button("取消") { model.canvas?.cancelPatch() }
                 Divider().frame(height: 18)
-                Button("复制") { model.copyAll() }
-                Button("保存…") { model.saveAs() }
-                Button("贴图") { model.pin() }
-                Divider().frame(height: 18)
-                Button("识别文字") { model.runOCR() }
-                Button("翻译") { model.translate() }
-                Picker("", selection: Binding(get: { model.targetChinese.map { $0 ? 1 : 2 } ?? 0 },
-                                              set: { model.targetChinese = $0 == 0 ? nil : $0 == 1 })) {
-                    Text("自动方向").tag(0); Text("译成中文").tag(1); Text("译成英文").tag(2)
-                }.labelsHidden().frame(width: 100)
-                if model.hasPatch {
-                    Divider().frame(height: 18)
-                    Button("确认浮动块") { model.canvas?.finishPatch() }.buttonStyle(.borderedProminent)
-                    Button("取消") { model.canvas?.cancelPatch() }
-                }
-                Spacer()
-                Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+            Button { model.canvas?.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                .disabled(!(model.revision >= 0 && model.doc.canUndo)).help("撤销 ⌘Z")
+            Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                .disabled(!(model.revision >= 0 && model.doc.canRedo)).help("重做 ⇧⌘Z")
+            Divider().frame(height: 18)
+            Button("识别文字") { model.runOCR() }
+            Button("翻译") { model.translate() }
+            Picker("", selection: Binding(get: { model.targetChinese.map { $0 ? 1 : 2 } ?? 0 },
+                                          set: { model.targetChinese = $0 == 0 ? nil : $0 == 1 })) {
+                Text("自动方向").tag(0); Text("译成中文").tag(1); Text("译成英文").tag(2)
+            }.labelsHidden().frame(width: 100)
         }
         .padding(8)
+    }
+
+    /// Settings for the active tool appear here; the status text sits on the right.
+    private var optionsBar: some View {
+        HStack(spacing: 10) {
+            switch model.tool {
+            case .rect, .ellipse, .line, .arrow, .pen, .highlighter, .number:
+                ColorPicker("颜色", selection: $model.colorValue)
+                HStack { Text("粗细").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
+            case .mosaic, .blur:
+                HStack { Text("强度").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
+            case .text:
+                ColorPicker("颜色", selection: $model.colorValue)
+                Stepper("字号 \(Int(model.fontSize))", value: $model.fontSize, in: 10...120, step: 2).font(.caption)
+            case .select, .crop:
+                ColorPicker("选区框颜色", selection: $settings.selectionColor)
+            }
+            Spacer()
+            Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10).padding(.vertical, 5)
     }
 
     private static let groupTitles: [HistoryGroup: String] = [.normal: "正常", .ocr: "提取文字", .translate: "翻译"]

@@ -142,6 +142,26 @@ final class OCRTests: XCTestCase {
     }
 }
 
+final class LiftTests: XCTestCase {
+    func testLiftLeavesWhiteAndMovesPixels() {
+        let doc = EditorDocument(image: solid(40, 40, RGBA(0, 0, 1)))
+        XCTAssertTrue(doc.liftSelection(CGRect(x: 10, y: 10, width: 10, height: 10)))
+        doc.setPatchRect(CGRect(x: 25, y: 25, width: 10, height: 10))
+        let out = doc.flattened()
+        XCTAssertEqual(pixel(out, 12, 12).0, 255)         // vacated -> white
+        XCTAssertEqual(pixel(out, 30, 30).2, 255)         // moved blue block
+        XCTAssertEqual(pixel(out, 30, 30).0, 0)
+        doc.cancelPatch()
+        XCTAssertEqual(pixel(doc.flattened(), 12, 12).0, 0)   // cancel restores
+    }
+
+    func testOversizedPasteFitsCanvas() {
+        let doc = EditorDocument(image: solid(100, 50, .white))
+        doc.paste(solid(400, 200, .red), centeredAt: CGPoint(x: 50, y: 25))
+        XCTAssertEqual(doc.patch?.rect, CGRect(x: 0, y: 0, width: 100, height: 50))
+    }
+}
+
 final class LLMTests: XCTestCase {
     func testEndpointVariants() {
         XCTAssertEqual(LLMTranslator.endpoint("https://api.x.com/v1")?.absoluteString, "https://api.x.com/v1/chat/completions")
