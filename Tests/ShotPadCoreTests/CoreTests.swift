@@ -283,3 +283,31 @@ final class BrowseStoreTests: XCTestCase {
         XCTAssertTrue(reloaded.groups.isEmpty)
     }
 }
+
+
+final class BoardTests: XCTestCase {
+    private func solid(_ w: Int, _ h: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()!
+    }
+    private func pixel(_ img: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
+        var px = [UInt8](repeating: 0, count: 4)
+        let c = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        c.draw(img, in: CGRect(x: -x, y: -(img.height - 1 - y), width: img.width, height: img.height))
+        return px
+    }
+
+    func testShotSitsTopLeftOnFixedBoard() {
+        let b = Board.make(placing: solid(100, 50), size: CGSize(width: 400, height: 300))
+        XCTAssertEqual(b.width, 400); XCTAssertEqual(b.height, 300)
+        XCTAssertGreaterThan(pixel(b, 10, 10)[0], 200); XCTAssertLessThan(pixel(b, 10, 10)[1], 80)   // shot, top-left
+        XCTAssertEqual(pixel(b, 200, 200)[1], 255)                                          // white elsewhere
+        XCTAssertEqual(pixel(b, 10, 80)[1], 255)                                            // below the shot
+    }
+
+    func testBoardGrowsForLargeShot() {
+        let b = Board.make(placing: solid(800, 600), size: CGSize(width: 400, height: 300))
+        XCTAssertEqual(b.width, 800); XCTAssertEqual(b.height, 600)
+    }
+}

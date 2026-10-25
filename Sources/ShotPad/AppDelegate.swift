@@ -8,7 +8,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     let model: EditorModel
     var onClose: ((EditorWindowController) -> Void)?
 
-    init(image: CGImage, history: HistoryStore, entry: HistoryEntry?) {
+    init(image shot: CGImage, history: HistoryStore, entry: HistoryEntry?, board: Bool = false) {
+        let image = board ? Board.make(placing: shot, size: AppSettings.shared.boardSize) : shot
         model = EditorModel(image: image, history: history, entry: entry)
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let visible = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1400, height: 900)
@@ -175,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             },
             translate: { TextTools.showTranslation(image, toChinese: nil) { _ in } },
-            edit: { [weak self] in QuickBar.dismiss(); self?.openEditor(image: image, entry: entry) },
+            edit: { [weak self] in QuickBar.dismiss(); self?.openEditor(image: image, entry: entry, board: true) },
             copyImage: { Clipboard.write(image) },
             pin: { PinWindow.show(image) },
             close: { QuickBar.dismiss() })
@@ -211,8 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func openEditor(image: CGImage, entry: HistoryEntry?) {
-        let controller = EditorWindowController(image: image, history: history, entry: entry)
+    private func openEditor(image: CGImage, entry: HistoryEntry?, board: Bool = false) {
+        let controller = EditorWindowController(image: image, history: history, entry: entry, board: board)
         controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c }; self?.historyChanged(); self?.refreshPolicy() }
         editors.append(controller)
         refreshPolicy()

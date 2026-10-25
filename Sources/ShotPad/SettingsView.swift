@@ -11,6 +11,14 @@ struct SettingsView: View {
         Form {
             Section("截图") {
                 Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
+                HStack {
+                    Text("编辑画板大小（像素）")
+                    Spacer()
+                    TextField("", value: $settings.boardWidth, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
+                    Text("×")
+                    TextField("", value: $settings.boardHeight, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
+                }
+                Text("截图进入编辑时放在这块白色画板的左上角；截图比画板大时画板自动撑大。").font(.caption).foregroundStyle(.secondary)
             }
             Section("界面") {
                 Toggle("始终在 Dock 显示", isOn: $settings.alwaysInDock)
