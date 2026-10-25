@@ -47,6 +47,7 @@ final class AppSettings: ObservableObject {
             + (captureModifiers & 512 != 0 ? "⇧" : "") + (captureModifiers & 256 != 0 ? "⌘" : "") + captureKeyLabel
     }
     private func shortcutChanged() { (NSApp.delegate as? AppDelegate)?.registerCaptureHotKey() }
+    @Published var imageFormat: ImageFormat { didSet { d.set(imageFormat.rawValue, forKey: "imageFormat") } }
     @Published var historySide: HistorySide { didSet { d.set(historySide.rawValue, forKey: "historySide") } }
     @Published var annotationColor: Color { didSet { store(annotationColor, "annotationColor") } }
     @Published var selectionColor: Color { didSet { store(selectionColor, "selectionColor") } }
@@ -67,6 +68,7 @@ final class AppSettings: ObservableObject {
     private init() {
         alwaysInDock = d.object(forKey: "alwaysInDock") as? Bool ?? true
         copyAfterCapture = d.bool(forKey: "copyAfterCapture")
+        imageFormat = d.string(forKey: "imageFormat").flatMap(ImageFormat.init(rawValue:)) ?? .png
         captureKeyCode = d.object(forKey: "captureKeyCode") as? Int ?? 0
         captureModifiers = d.object(forKey: "captureModifiers") as? Int ?? (4096 | 2048)
         captureKeyLabel = d.string(forKey: "captureKeyLabel") ?? "A"

@@ -169,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showQuickBar(for result: CaptureResult) {
         let image = result.image
-        let entry = history.add(image)
+        let entry = history.add(image, format: AppSettings.shared.imageFormat)
         historyChanged()
         if AppSettings.shared.copyAfterCapture { Clipboard.write(image) }
         let actions = QuickActions(

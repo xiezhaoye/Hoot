@@ -247,6 +247,8 @@ final class HistoryGroupTests: XCTestCase {
         store.setGroup(e.id, .translate)
         XCTAssertEqual(HistoryStore(directory: dir, limit: 5).entries.first?.group, .translate)
         XCTAssertTrue(store.thumbnail(for: e.id) === store.thumbnail(for: e.id))   // cached
+        // an index written by an older version points at "<id>.png"
+        try FileManager.default.copyItem(at: dir.appendingPathComponent(e.fileName!), to: dir.appendingPathComponent("\(e.id.uuidString).png"))
         let old = #"[{"id":"\#(e.id.uuidString)","date":0,"width":4,"height":4}]"#
         try old.write(to: dir.appendingPathComponent("index.json"), atomically: true, encoding: .utf8)
         XCTAssertEqual(HistoryStore(directory: dir, limit: 5).entries.first?.group, .normal)
@@ -309,5 +311,30 @@ final class BoardTests: XCTestCase {
     func testBoardGrowsForLargeShot() {
         let b = Board.make(placing: solid(800, 600), size: CGSize(width: 400, height: 300))
         XCTAssertEqual(b.width, 800); XCTAssertEqual(b.height, 600)
+    }
+}
+
+final class FormatTests: XCTestCase {
+    func testStoreWritesReadableFileInChosenFormat() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fmt-\(UUID().uuidString)")
+        let store = HistoryStore(directory: dir)
+        let img = Board.blank(size: CGSize(width: 40, height: 30))!
+        for fmt in [ImageFormat.png, .jpeg, .tiff, .bmp, .gif] {
+            let e = try XCTUnwrap(store.add(img, format: fmt, namePrefix: "画板"), "\(fmt)")
+            XCTAssertTrue(e.fileName?.hasPrefix("画板 ") == true && e.fileName?.hasSuffix("." + fmt.fileExtension) == true)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent(e.fileName!).path))
+            XCTAssertEqual(store.image(for: e.id)?.width, 40)
+        }
+        // same second, same prefix and format: the name is numbered, not overwritten
+        let d = Date()
+        let a = store.add(img, date: d), b = store.add(img, date: d)
+        XCTAssertNotEqual(a?.fileName, b?.fileName)
+        // survives a reload, and removing an entry removes its file
+        let again = HistoryStore(directory: dir)
+        XCTAssertEqual(again.entries.count, store.entries.count)
+        if let e = again.entries.first {
+            again.remove(e.id)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent(e.fileName!).path))
+        }
     }
 }

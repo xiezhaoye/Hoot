@@ -17,13 +17,15 @@ private struct QuickBarView: View {
     var body: some View {
         HStack(spacing: 4) {
             barButton("text.viewfinder", "复制文字") {
-                status = "识别中…"
-                actions.copyText { status = $0 }
+                // the bar closes at once; a soft sound tells whether the text reached the clipboard
+                actions.copyText { msg in
+                    if msg.hasPrefix("已复制") { NSSound(named: "Tink")?.play() } else { NSSound.beep() }
+                }
             }
             barButton("character.bubble", "翻译") { actions.translate() }
             barButton("pencil.and.outline", "编辑") { actions.edit() }
             Divider().frame(height: 18)
-            barButton("doc.on.doc", "复制") { actions.copyImage(); status = "已复制图片" }
+            barButton("doc.on.doc", "复制") { actions.copyImage() }
             barButton("pin", "钉住") { actions.pin() }
             if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4) }
             Button { actions.close() } label: { Image(systemName: "xmark") }
@@ -36,7 +38,7 @@ private struct QuickBarView: View {
     }
 
     private func barButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(title, systemImage: icon).labelStyle(.titleAndIcon) }
+        Button { action(); actions.close() } label: { Label(title, systemImage: icon).labelStyle(.titleAndIcon) }
             .buttonStyle(.borderless).controlSize(.small).padding(.horizontal, 4)
     }
 }

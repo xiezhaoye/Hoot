@@ -37,6 +37,9 @@ struct SettingsView: View {
                     Spacer()
                     ShortcutRecorder(settings: settings)
                 }
+                Picker("保存格式", selection: $settings.imageFormat) {
+                    ForEach(ImageFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
                 Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
                 HStack {
                     Text("编辑画板大小（像素）")
@@ -44,10 +47,15 @@ struct SettingsView: View {
                     TextField("", value: $settings.boardWidth, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
                     Text("×")
                     TextField("", value: $settings.boardHeight, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
+                    Menu("预设") {
+                        ForEach([(1920, 1080), (2560, 1440), (3840, 2160), (2480, 3508)], id: \.0) { w, h in
+                            Button("\(w) × \(h)") { settings.boardWidth = w; settings.boardHeight = h }
+                        }
+                    }.fixedSize()
                 }
-                Text("截图进入编辑时放在这块白色画板的左上角；截图比画板大时画板自动撑大。").font(.caption).foregroundStyle(.secondary)
+                Text("宽 × 高，单位是像素（Retina 屏上 1920 像素显示为 960 点宽）。截图进入编辑时放在这块白色画板的左上角；比画板大时画板自动撑大。预设里最后一项是 A4 @300dpi。").font(.caption).foregroundStyle(.secondary)
             }
-            Section("存储") {
+            Section("存储与格式") {
                 HStack {
                     Text("截图保存目录")
                     Spacer()

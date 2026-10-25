@@ -13,9 +13,11 @@ public struct HistoryEntry: Codable, Identifiable, Equatable {
     public var width: Int
     public var height: Int
     public var group: HistoryGroup
+    /// File name inside the history folder; entries from older versions have none and use "<id>.png".
+    public var fileName: String?
 
-    public init(id: UUID = UUID(), date: Date, width: Int, height: Int, group: HistoryGroup = .normal) {
-        self.id = id; self.date = date; self.width = width; self.height = height; self.group = group
+    public init(id: UUID = UUID(), date: Date, width: Int, height: Int, group: HistoryGroup = .normal, fileName: String? = nil) {
+        self.id = id; self.date = date; self.width = width; self.height = height; self.group = group; self.fileName = fileName
     }
 
     public init(from decoder: Decoder) throws {
@@ -25,6 +27,7 @@ public struct HistoryEntry: Codable, Identifiable, Equatable {
         width = try c.decode(Int.self, forKey: .width)
         height = try c.decode(Int.self, forKey: .height)
         group = try c.decodeIfPresent(HistoryGroup.self, forKey: .group) ?? .normal
+        fileName = try c.decodeIfPresent(String.self, forKey: .fileName)
     }
 }
 
@@ -42,16 +45,34 @@ public final class HistoryStore {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: indexURL),
            let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
-            entries = decoded.filter { FileManager.default.fileExists(atPath: file($0.id).path) }
+            entries = decoded.filter { FileManager.default.fileExists(atPath: file(for: $0).path) }
         }
     }
 
-    private func file(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).png") }
+    private func file(for entry: HistoryEntry) -> URL { directory.appendingPathComponent(entry.fileName ?? "\(entry.id.uuidString).png") }
+
+    private func file(_ id: UUID) -> URL {
+        entries.first { $0.id == id }.map(file(for:)) ?? directory.appendingPathComponent("\(id.uuidString).png")
+    }
+
+    /// "<prefix> yyyy-MM-dd HH.mm.ss.<ext>", numbered when that name is taken.
+    private func uniqueName(prefix: String, date: Date, format: ImageFormat) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let base = "\(prefix) \(f.string(from: date))"
+        var name = "\(base).\(format.fileExtension)", n = 2
+        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
+            name = "\(base) \(n).\(format.fileExtension)"; n += 1
+        }
+        return name
+    }
 
     @discardableResult
-    public func add(_ image: CGImage, date: Date = Date(), group: HistoryGroup = .normal) -> HistoryEntry? {
-        let entry = HistoryEntry(date: date, width: image.width, height: image.height, group: group)
-        guard write(image, to: file(entry.id)) else { return nil }
+    public func add(_ image: CGImage, date: Date = Date(), group: HistoryGroup = .normal,
+                    format: ImageFormat = .png, namePrefix: String = "截图") -> HistoryEntry? {
+        let name = uniqueName(prefix: namePrefix, date: date, format: format)
+        let entry = HistoryEntry(date: date, width: image.width, height: image.height, group: group, fileName: name)
+        guard write(image, to: directory.appendingPathComponent(name)) else { return nil }
         entries.insert(entry, at: 0)
         prune()
         saveIndex()
@@ -92,15 +113,16 @@ public final class HistoryStore {
     }
 
     public func remove(_ id: UUID) {
+        let url = file(id)
         entries.removeAll { $0.id == id }
         thumbCache[id] = nil
-        try? FileManager.default.removeItem(at: file(id))
+        try? FileManager.default.removeItem(at: url)
         saveIndex()
     }
 
     private func prune() {
         while entries.count > limit, let last = entries.last {
-            try? FileManager.default.removeItem(at: file(last.id))
+            try? FileManager.default.removeItem(at: file(for: last))
             thumbCache[last.id] = nil
             entries.removeLast()
         }
@@ -112,8 +134,6 @@ public final class HistoryStore {
     }
 
     private func write(_ image: CGImage, to url: URL) -> Bool {
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return false }
-        CGImageDestinationAddImage(dest, image, nil)
-        return CGImageDestinationFinalize(dest)
+        ImageFormat.from(extension: url.pathExtension).encode(image, to: url)
     }
 }

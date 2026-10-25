@@ -61,12 +61,6 @@ struct EditorView: View {
 
     private var toolbar: some View {
         HStack(spacing: 4) {
-            Button { (NSApp.delegate as? AppDelegate)?.capture() } label: {
-                Image(systemName: "camera.viewfinder").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 30, height: 30).background(Circle().fill(Color.accentColor))
-            }
-            .buttonStyle(.plain).help("截图 \(settings.captureShortcutText)")
-            Divider().frame(height: 18).padding(.horizontal, 4)
             ForEach(toolIcons, id: \.0) { tool, icon, help in
                 let on = model.tool == tool
                 Button {
@@ -88,6 +82,12 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
                 .help(help)
             }
+            Spacer(minLength: 12)
+            Button { (NSApp.delegate as? AppDelegate)?.capture() } label: {
+                Image(systemName: "camera.viewfinder").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 30, height: 30).background(Circle().fill(Color.accentColor))
+            }
+            .buttonStyle(.plain).help("截图 \(settings.captureShortcutText)")
             Spacer(minLength: 12)
             if model.hasPatch {
                 Button("确认浮动块") { model.canvas?.finishPatch() }.buttonStyle(.borderedProminent)
@@ -140,6 +140,16 @@ struct EditorView: View {
     }
 
     private var zoomMenu: some View {
+        HStack(spacing: 4) {
+            ForEach([50, 100, 150], id: \.self) { p in
+                Button("\(p)%") { model.canvas?.setZoomPercent(p) }
+                    .buttonStyle(.bordered).tint(model.zoomPercent == p ? .accentColor : nil)
+            }
+            zoomPicker
+        }
+    }
+
+    private var zoomPicker: some View {
         Menu("\(model.zoomPercent)%") {
             ForEach([25, 50, 100, 200, 400, 800], id: \.self) { p in Button("\(p)%") { model.canvas?.setZoomPercent(p) } }
             Divider()
@@ -174,7 +184,7 @@ struct EditorView: View {
 
     /// Sends a browsed picture to the editor as a new 截图 entry; the original file is never touched.
     private func editFromBrowse(_ image: CGImage) {
-        guard let entry = model.history.add(image) else { return }
+        guard let entry = model.history.add(image, format: settings.imageFormat, namePrefix: "图片") else { return }
         model.entries = model.history.entries
         model.open(entry)
         tab = .shots
@@ -189,8 +199,10 @@ struct EditorView: View {
             Divider()
             switch tab {
             case .shots:
-                Button { model.newBlank() } label: { Label("新建", systemImage: "plus.square") }
-                    .buttonStyle(.bordered).padding(.horizontal, 8).padding(.top, 8)
+                Button { model.newBlank() } label: {
+                    Label("新建", systemImage: "plus.square").font(.title3).frame(maxWidth: .infinity, minHeight: 84)
+                }
+                .buttonStyle(.bordered).padding(.horizontal, 8).padding(.top, 8)
                     .help("新建一块空白画板（尺寸见设置）")
                 ScrollView {
                     LazyVStack(spacing: 8) {

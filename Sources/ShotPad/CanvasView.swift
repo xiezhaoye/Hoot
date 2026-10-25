@@ -210,6 +210,16 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if model?.tool == .select, doc.patch == nil { drawHandles(viewRect(s)) }
         }
         if let c = cropRect { outline(viewRect(c), color: selectionColor, dashed: true) }
+        if patchDrag != nil, let patch = doc.patch {
+            // alignment lines: two horizontal and two vertical, along the edges of the block being moved
+            let r = viewRect(patch.rect), v = visibleRect
+            let path = NSBezierPath()
+            path.lineWidth = 1
+            for y in [r.minY, r.maxY] { path.move(to: CGPoint(x: v.minX, y: y)); path.line(to: CGPoint(x: v.maxX, y: y)) }
+            for x in [r.minX, r.maxX] { path.move(to: CGPoint(x: x, y: v.minY)); path.line(to: CGPoint(x: x, y: v.maxY)) }
+            selectionColor.withAlphaComponent(0.8).setStroke()
+            path.stroke()
+        }
         if let d = draftRect { outline(viewRect(d), color: model?.color.nsColor ?? .red, dashed: false) }
         if let tool = model?.tool, let m = model, dragStart != nil {
             ctx.saveGState()
@@ -476,7 +486,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func mouseUp(with event: NSEvent) {
         if panOrigin != nil { panOrigin = nil; window?.invalidateCursorRects(for: self); return }
         guard let model, let doc, let s = dragStart else { dragStart = nil; return }
-        if editDrag != nil { editDrag = nil; dragStart = nil; if let f = textField { window?.makeFirstResponder(f) }; return }
+        if editDrag != nil {
+            editDrag = nil; dragStart = nil
+            // only refocus when the field lost focus: re-selecting a field that is being edited would end the edit
+            if let f = textField, f.currentEditor() == nil { window?.makeFirstResponder(f) }
+            return
+        }
         defer { dragStart = nil; patchDrag = nil; annDrag = nil; editDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
         if annDrag != nil || editDrag != nil { return }
         if patchDrag != nil { return }
@@ -604,6 +619,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
+        if editDrag != nil { return }      // the box is being dragged / resized: keep it as a box
         commitText()
         window?.makeFirstResponder(self)
     }
