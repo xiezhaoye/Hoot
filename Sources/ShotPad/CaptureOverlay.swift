@@ -4,11 +4,18 @@ private final class OverlayWindow: NSWindow {
     override var canBecomeKey: Bool { true }
 }
 
+struct CaptureResult {
+    let image: CGImage
+    /// Captured area in Cocoa screen coordinates (bottom-left origin).
+    let screenRect: CGRect
+}
+
 /// Full-screen frozen screenshot on one display; the user drags a region or clicks a hovered window.
-private final class OverlayView: NSView {
+fileprivate final class OverlayView: NSView {
     let shot: ScreenShot
     let windows: [WindowInfo]
-    var onFinish: (CGImage?) -> Void = { _ in }
+    var onFinish: (CaptureResult?) -> Void = { _ in }
+    private var cursor: CGPoint?
     private var dragStart: CGPoint?
     private var selection: CGRect?
     private var hover: CGRect?
@@ -37,6 +44,7 @@ private final class OverlayView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        cursor = convert(event.locationInWindow, from: nil)
         let g = global(convert(event.locationInWindow, from: nil))
         hover = windows.first { $0.rect.contains(g) }.map { local($0.rect).intersection(bounds) }
         needsDisplay = true
@@ -50,6 +58,7 @@ private final class OverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let s = dragStart else { return }
         let p = convert(event.locationInWindow, from: nil)
+        cursor = p
         selection = CGRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y)).intersection(bounds)
         hover = nil
         needsDisplay = true
@@ -62,7 +71,9 @@ private final class OverlayView: NSView {
         guard let r = rect, r.width >= 2, r.height >= 2 else { selection = nil; needsDisplay = true; return }
         let k = shot.scale
         let px = CGRect(x: r.minX * k, y: r.minY * k, width: r.width * k, height: r.height * k).integral
-        onFinish(shot.image.cropping(to: px))
+        guard let cropped = shot.image.cropping(to: px) else { onFinish(nil); return }
+        let f = shot.screen.frame
+        onFinish(CaptureResult(image: cropped, screenRect: CGRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)))
     }
 
     override func keyDown(with event: NSEvent) {
@@ -76,6 +87,7 @@ private final class OverlayView: NSView {
         image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
         NSColor.black.withAlphaComponent(0.4).setFill()
         bounds.fill(using: .sourceOver)
+        defer { drawMagnifier() }
         guard let r = selection ?? hover else { return }
         NSGraphicsContext.saveGraphicsState()
         r.clip()
@@ -83,7 +95,7 @@ private final class OverlayView: NSView {
         NSGraphicsContext.restoreGraphicsState()
         let path = NSBezierPath(rect: r)
         path.lineWidth = 2
-        (selection != nil ? NSColor.systemBlue : NSColor.systemGreen).setStroke()
+        (selection != nil ? AppSettings.shared.selectionNSColor : NSColor.systemGreen).setStroke()
         path.stroke()
         let k = shot.scale
         let label = " \(Int(r.width * k)) × \(Int(r.height * k)) " as NSString
@@ -95,15 +107,26 @@ private final class OverlayView: NSView {
     }
 }
 
+extension OverlayView {
+    fileprivate func drawMagnifier() {
+        guard let ctx = NSGraphicsContext.current?.cgContext, let c = cursor else { return }
+        let k = shot.scale
+        let px = CGPoint(x: c.x * k, y: c.y * k)
+        var info = "\(Int(px.x)), \(Int(px.y))"
+        if let s = selection { info += "   \(Int(s.width * k))×\(Int(s.height * k))" }
+        Magnifier.draw(in: ctx, image: shot.image, pixel: px, cursor: c, bounds: bounds, info: info)
+    }
+}
+
 @MainActor
 final class CaptureOverlay {
     static let shared = CaptureOverlay()
     private var windows: [NSWindow] = []
-    private var completion: ((CGImage?) -> Void)?
+    private var completion: ((CaptureResult?) -> Void)?
 
     var isActive: Bool { !windows.isEmpty }
 
-    func begin(shots: [ScreenShot], windows infos: [WindowInfo], completion: @escaping (CGImage?) -> Void) {
+    func begin(shots: [ScreenShot], windows infos: [WindowInfo], completion: @escaping (CaptureResult?) -> Void) {
         guard !isActive else { return }
         self.completion = completion
         for shot in shots {
@@ -122,10 +145,10 @@ final class CaptureOverlay {
         for w in windows { w.makeKeyAndOrderFront(nil); w.makeFirstResponder(w.contentView) }
     }
 
-    private func finish(_ image: CGImage?) {
+    private func finish(_ image: CaptureResult?) {
         let done = completion
         completion = nil
-        windows.forEach { $0.orderOut(nil) }
+        windows.forEach { $0.orderOut(nil); $0.contentView = nil }
         windows.removeAll()
         done?(image)
     }

@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.register(keyCode: 0, modifiers: 4096 | 2048, id: 1) { [weak self] in self?.capture() }   // ⌃⌥A
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
+        TextTools.warmUp()
     }
 
     private func makeMenu() -> NSMenu {
@@ -66,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         limits.submenu = sub
         menu.addItem(limits)
+        menu.addItem(item("设置…", #selector(openSettings)))
         menu.addItem(.separator())
         menu.addItem(item("退出", #selector(NSApplication.terminate(_:)), target: NSApp))
         return menu
@@ -77,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return it
     }
 
+    @objc private func openSettings() { SettingsWindow.show() }
     @objc private func captureAction() { capture() }
     @objc private func pinAction() { pinClipboard() }
 
@@ -95,8 +98,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let image = Clipboard.readImage() { PinWindow.show(image) } else { NSSound.beep() }
     }
 
+    private func historyChanged() {
+        editors.forEach { $0.model.entries = history.entries }
+    }
+
+    private func showQuickBar(for result: CaptureResult) {
+        let image = result.image
+        let entry = history.add(image)
+        historyChanged()
+        let mark: (HistoryGroup) -> Void = { [weak self] group in
+            guard let self, let id = entry?.id else { return }
+            self.history.setGroup(id, group)
+            self.historyChanged()
+        }
+        let actions = QuickActions(
+            copyText: { report in
+                Task { @MainActor in
+                    do {
+                        let text = try await TextTools.extractText(image)
+                        if text.isEmpty { report("没有识别到文字"); return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                        mark(.ocr)
+                        report("已复制 \(text.count) 字")
+                    } catch { report("识别失败") }
+                }
+            },
+            translate: { TextTools.showTranslation(image, toChinese: nil) { ok in if ok { mark(.translate) } } },
+            edit: { [weak self] in QuickBar.dismiss(); self?.openEditor(image: image, entry: entry) },
+            copyImage: { Clipboard.write(image) },
+            pin: { PinWindow.show(image) },
+            close: { QuickBar.dismiss() })
+        QuickBar.show(near: result.screenRect, actions: actions)
+    }
+
     func capture() {
         guard !CaptureOverlay.shared.isActive else { return }
+        QuickBar.dismiss()
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
             let alert = NSAlert()
@@ -113,10 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let shots = try await ScreenCapture.captureAll()
                 let windows = ScreenCapture.windows()
-                CaptureOverlay.shared.begin(shots: shots, windows: windows) { [weak self] image in
-                    guard let self, let image else { return }
-                    let entry = self.history.add(image)
-                    self.openEditor(image: image, entry: entry)
+                CaptureOverlay.shared.begin(shots: shots, windows: windows) { [weak self] result in
+                    guard let self, let result else { return }
+                    self.showQuickBar(for: result)
                 }
             } catch {
                 NSAlert(error: error).runModal()
@@ -126,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openEditor(image: CGImage, entry: HistoryEntry?) {
         let controller = EditorWindowController(image: image, history: history, entry: entry)
-        controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c } }
+        controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c }; self?.historyChanged() }
         editors.append(controller)
         controller.show()
     }

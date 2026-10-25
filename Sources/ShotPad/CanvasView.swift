@@ -18,11 +18,32 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var patchDrag: PatchDrag?
     private var textField: NSTextField?
     private var textOrigin: CGPoint = .zero
+    private var hoverPoint: CGPoint?
+    private var confirmButton: NSButton?
+    private var lastHadPatch = false
+
+    private var selectionColor: NSColor { AppSettings.shared.selectionNSColor }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     var doc: EditorDocument? { model?.doc }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hoverPoint = convert(event.locationInWindow, from: nil)
+        if model?.tool == .select || model?.tool == .crop { needsDisplay = true }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverPoint = nil
+        needsDisplay = true
+    }
 
     func attach(_ model: EditorModel) {
         self.model = model
@@ -81,16 +102,16 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             ctx.interpolationQuality = .none
             Renderer.drawImage(ctx, patch.image, in: viewRect(patch.rect))
             ctx.restoreGState()
-            outline(viewRect(patch.rect), color: .systemBlue, dashed: true)
+            outline(viewRect(patch.rect), color: selectionColor, dashed: true)
             for h in Handle.allCases {
                 let p = h.point(in: viewRect(patch.rect))
                 let r = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
                 NSColor.white.setFill(); r.fill()
-                NSColor.systemBlue.setStroke(); NSBezierPath(rect: r).stroke()
+                selectionColor.setStroke(); NSBezierPath(rect: r).stroke()
             }
         }
-        if let s = selection { outline(viewRect(s), color: .systemBlue, dashed: true) }
-        if let c = cropRect { outline(viewRect(c), color: .systemOrange, dashed: true) }
+        if let s = selection { outline(viewRect(s), color: selectionColor, dashed: true) }
+        if let c = cropRect { outline(viewRect(c), color: selectionColor, dashed: true) }
         if let d = draftRect { outline(viewRect(d), color: model?.color.nsColor ?? .red, dashed: false) }
         if let tool = model?.tool, let m = model, dragStart != nil {
             ctx.saveGState()
@@ -108,7 +129,36 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             }
             ctx.restoreGState()
         }
+        if let tool = model?.tool, tool == .select || tool == .crop, let h = hoverPoint, let cache {
+            let px = CGPoint(x: h.x / zoom, y: h.y / zoom)
+            var info = "\(Int(px.x)), \(Int(px.y))"
+            if let r = tool == .select ? selection : cropRect { info += "   \(Int(r.width))×\(Int(r.height))" }
+            Magnifier.draw(in: ctx, image: cache, pixel: px, cursor: h, bounds: visibleRect, info: info)
+        }
+        DispatchQueue.main.async { [weak self] in self?.syncPatchUI() }
     }
+
+    /// Keeps the confirm button and the toolbar in step with the floating block.
+    private func syncPatchUI() {
+        let has = doc?.patch != nil
+        if has != lastHadPatch { lastHadPatch = has; model?.documentChanged() }
+        guard let patch = doc?.patch else { confirmButton?.removeFromSuperview(); confirmButton = nil; return }
+        let b: NSButton
+        if let existing = confirmButton { b = existing } else {
+            b = NSButton(title: "确认 ⏎", target: self, action: #selector(confirmPatch))
+            b.bezelStyle = .rounded; b.controlSize = .small; b.bezelColor = .controlAccentColor
+            b.sizeToFit()
+            addSubview(b)
+            confirmButton = b
+        }
+        let r = viewRect(patch.rect)
+        var o = CGPoint(x: r.maxX - b.frame.width, y: r.maxY + 8)
+        if o.y + b.frame.height > frame.height { o.y = r.maxY - b.frame.height - 8 }
+        o.x = max(0, o.x)
+        if b.frame.origin != o { b.setFrameOrigin(o) }
+    }
+
+    @objc private func confirmPatch() { finishPatch() }
 
     private func outline(_ r: CGRect, color: NSColor, dashed: Bool) {
         let path = NSBezierPath(rect: r)
@@ -125,14 +175,16 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         window?.makeFirstResponder(self)
         commitText()
         let p = imagePoint(event)
+        // a floating block can be resized from its handles whatever tool is active
+        if let patch = doc.patch, let h = patch.hitHandle(at: p, slop: 7 / zoom) {
+            patchDrag = .resize(h, patch.rect); dragStart = p; return
+        }
         dragStart = p
         draftPoints = [p]
         switch model.tool {
         case .select:
-            if let patch = doc.patch {
-                if let h = patch.hitHandle(at: p, slop: 7 / zoom) { patchDrag = .resize(h, patch.rect); return }
-                if patch.rect.contains(p) { patchDrag = .move(grab: p, origin: patch.rect); return }
-                doc.commitPatch(); refresh()
+            if let patch = doc.patch, patch.rect.contains(p) {
+                patchDrag = .move(grab: p, origin: patch.rect); return
             } else if let s = selection, s.contains(p), let img = doc.copyRegion(s) {
                 // dragging a selection lifts a copy of it, leaving the original in place
                 doc.beginPatch(image: img, rect: s.integral)
@@ -157,6 +209,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func mouseDragged(with event: NSEvent) {
         guard let model, let doc, let s = dragStart else { return }
         let p = imagePoint(event)
+        hoverPoint = convert(event.locationInWindow, from: nil)
         if let drag = patchDrag {
             switch drag {
             case .move(let grab, let origin):
@@ -288,7 +341,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         selection = nil
         model?.tool = .select
         doc.paste(img, centeredAt: anchor)
-        model?.status = "已粘贴：拖动移动，拖手柄拉伸，回车确认，Esc 取消"
+        model?.status = "已粘贴：拖动移动，拖手柄拉伸，点「确认」或回车固定，Esc 取消"
         needsDisplay = true
     }
 
@@ -296,6 +349,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     func redo() { doc?.redo(); reload() }
 
     func finishPatch() { doc?.commitPatch(); refresh() }
+    func cancelPatch() { doc?.cancelPatch(); needsDisplay = true }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: model?.tool == .select ? .arrow : .crosshair) }
 }

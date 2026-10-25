@@ -140,13 +140,46 @@ final class OCRTests: XCTestCase {
         XCTAssertTrue(TextRecognizer.isMostlyChinese("你好世界 ok"))
         XCTAssertFalse(TextRecognizer.isMostlyChinese("Hello 世"))
     }
+}
 
-    func testOverlayUsesBackgroundColour() {
-        let img = solid(200, 60, RGBA(0.1, 0.1, 0.4))
-        let lines = [RecognizedLine(text: "x", rect: CGRect(x: 20, y: 20, width: 100, height: 20))]
-        let o = TextRecognizer.overlays(lines: lines, translations: ["译文"], over: img)
-        XCTAssertEqual(o.count, 1)
-        XCTAssertEqual(o[0].color, .white)          // dark background -> white text
-        if case .textBox(let t, _, let bg) = o[0].kind { XCTAssertEqual(t, "译文"); XCTAssertLessThan(bg.luminance, 0.3) } else { XCTFail() }
+final class LLMTests: XCTestCase {
+    func testEndpointVariants() {
+        XCTAssertEqual(LLMTranslator.endpoint("https://api.x.com/v1")?.absoluteString, "https://api.x.com/v1/chat/completions")
+        XCTAssertEqual(LLMTranslator.endpoint("https://api.x.com/v1/")?.absoluteString, "https://api.x.com/v1/chat/completions")
+        XCTAssertEqual(LLMTranslator.endpoint("https://a/v1/chat/completions")?.absoluteString, "https://a/v1/chat/completions")
+        XCTAssertNil(LLMTranslator.endpoint("  "))
+        XCTAssertNil(LLMTranslator.endpoint("ftp://a"))
+    }
+
+    func testRequestBody() throws {
+        let r = LLMTranslator.makeRequest(lines: ["Hello", "World"], toChinese: true, config: LLMConfig(baseURL: "https://a/v1", apiKey: "k", model: "m"))!
+        XCTAssertEqual(r.value(forHTTPHeaderField: "Authorization"), "Bearer k")
+        let body = try JSONSerialization.jsonObject(with: r.httpBody!) as! [String: Any]
+        XCTAssertEqual(body["model"] as? String, "m")
+        let msgs = body["messages"] as! [[String: String]]
+        XCTAssertEqual(msgs[1]["content"], "[\"Hello\",\"World\"]")
+    }
+
+    func testParseHandlesFencesAndMismatch() throws {
+        func reply(_ content: String) -> Data {
+            try! JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]])
+        }
+        XCTAssertEqual(try LLMTranslator.parse(reply("```json\n[\"你好\",\"世界\"]\n```"), expected: 2), ["你好", "世界"])
+        XCTAssertThrowsError(try LLMTranslator.parse(reply("[\"a\"]"), expected: 2))
+        XCTAssertThrowsError(try LLMTranslator.parse(reply("nope"), expected: 1))
+    }
+}
+
+final class HistoryGroupTests: XCTestCase {
+    func testGroupPersistsAndOldIndexDefaultsToNormal() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = HistoryStore(directory: dir, limit: 5)
+        let e = store.add(solid(4, 4, .red), group: .ocr)!
+        store.setGroup(e.id, .translate)
+        XCTAssertEqual(HistoryStore(directory: dir, limit: 5).entries.first?.group, .translate)
+        XCTAssertTrue(store.thumbnail(for: e.id) === store.thumbnail(for: e.id))   // cached
+        let old = #"[{"id":"\#(e.id.uuidString)","date":0,"width":4,"height":4}]"#
+        try old.write(to: dir.appendingPathComponent("index.json"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(HistoryStore(directory: dir, limit: 5).entries.first?.group, .normal)
     }
 }

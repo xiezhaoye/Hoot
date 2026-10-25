@@ -1,0 +1,66 @@
+import AppKit
+import SwiftUI
+import ShotPadCore
+
+struct SettingsView: View {
+    @ObservedObject var settings = AppSettings.shared
+    @State private var testResult = ""
+    @State private var testing = false
+
+    var body: some View {
+        Form {
+            Section("界面") {
+                Picker("历史栏位置", selection: $settings.historySide) {
+                    Text("左侧").tag(AppSettings.HistorySide.left)
+                    Text("右侧").tag(AppSettings.HistorySide.right)
+                }.pickerStyle(.segmented)
+                ColorPicker("标注颜色（画笔、箭头、文字等）", selection: $settings.annotationColor)
+                ColorPicker("选区 / 裁剪框颜色", selection: $settings.selectionColor)
+            }
+            Section("大模型翻译（OpenAI 兼容接口）") {
+                TextField("Base URL", text: $settings.baseURL, prompt: Text("https://api.openai.com/v1"))
+                SecureField("API Key", text: $settings.apiKey)
+                TextField("模型名", text: $settings.model, prompt: Text("gpt-4o-mini"))
+                HStack {
+                    Button("测试连接") { test() }.disabled(settings.llm == nil || testing)
+                    if testing { ProgressView().controlSize(.small) }
+                    Text(testResult).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Text("三项都填写才会启用，翻译时优先使用；失败或未配置时回退到系统本地翻译。Key 保存在系统钥匙串。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460, height: 440)
+    }
+
+    private func test() {
+        guard let cfg = settings.llm else { return }
+        testing = true; testResult = ""
+        Task {
+            do {
+                let out = try await LLMTranslator.translate(lines: ["Hello"], toChinese: true, config: cfg)
+                testResult = "成功：Hello → \(out.first ?? "")"
+            } catch { testResult = "失败：\(error.localizedDescription)" }
+            testing = false
+        }
+    }
+}
+
+@MainActor
+enum SettingsWindow {
+    private static var window: NSWindow?
+
+    static func show() {
+        if window == nil {
+            let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.title = "ShotPad 设置"
+            w.isReleasedWhenClosed = false
+            w.contentView = NSHostingView(rootView: SettingsView())
+            w.center()
+            window = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}

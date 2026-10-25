@@ -1,37 +1,29 @@
 import AppKit
 import SwiftUI
-import Translation
 import ShotPadCore
 
 extension RGBA {
     var nsColor: NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: a) }
 }
 
-struct TranslationJob {
-    var lines: [RecognizedLine]
-    var offset: CGPoint
-    var configuration: TranslationSession.Configuration
-}
-
 @MainActor
 final class EditorModel: ObservableObject {
     @Published var doc: EditorDocument
     @Published var tool: Tool = .select
-    @Published var colorValue: Color = Color(red: 0.95, green: 0.2, blue: 0.2)
+    @Published var colorValue: Color = AppSettings.shared.annotationColor {
+        didSet { AppSettings.shared.annotationColor = colorValue }
+    }
     @Published var lineWidth: CGFloat = 3
     @Published var fontSize: CGFloat = 28
     @Published var status = ""
     @Published var entries: [HistoryEntry] = []
     @Published var currentID: UUID?
-    @Published var ocrText: String?
     @Published var busy = false
-    @Published var translationConfig: TranslationSession.Configuration?
     @Published var targetChinese: Bool? = nil    // nil = pick automatically from the recognised text
     @Published var revision = 0                  // bumps whenever the document changes, to refresh undo/redo buttons
 
     let history: HistoryStore
     weak var canvas: CanvasView?
-    private var job: TranslationJob?
 
     init(image: CGImage, history: HistoryStore, entry: HistoryEntry?) {
         self.doc = EditorDocument(image: image)
@@ -43,6 +35,8 @@ final class EditorModel: ObservableObject {
     var color: RGBAWrapper { RGBAWrapper(colorValue) }
 
     func documentChanged() { revision += 1 }
+
+    var hasPatch: Bool { revision >= 0 && doc.patch != nil }
 
     // MARK: History
 
@@ -71,13 +65,11 @@ final class EditorModel: ObservableObject {
     // MARK: Output
 
     func copyAll() {
-        canvas?.finishPatch()
         Clipboard.write(doc.flattened())
         status = "已复制到剪贴板"
     }
 
     func saveAs() {
-        canvas?.finishPatch()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
@@ -87,79 +79,22 @@ final class EditorModel: ObservableObject {
     }
 
     func pin() {
-        canvas?.finishPatch()
         PinWindow.show(doc.flattened())
     }
 
     // MARK: OCR / translate
 
-    private func recognitionTarget() -> (image: CGImage, offset: CGPoint) {
-        canvas?.finishPatch()
-        if let s = canvas?.selectionRect, s.width > 4, s.height > 4, let region = doc.copyRegion(s) {
-            return (region, s.integral.origin)
-        }
-        return (doc.rendered(), .zero)
+    /// Floating blocks stay floating: they are included in the output without being baked into the document.
+    private func recognitionTarget() -> CGImage {
+        let full = doc.flattened()
+        if let s = canvas?.selectionRect, s.width > 4, s.height > 4,
+           let region = full.cropping(to: s.integral.intersection(doc.bounds)) { return region }
+        return full
     }
 
-    func runOCR() {
-        let target = recognitionTarget()
-        busy = true; status = "正在识别文字…"
-        Task.detached {
-            let result = Result { try TextRecognizer.recognize(target.image) }
-            await MainActor.run {
-                self.busy = false
-                switch result {
-                case .success(let lines):
-                    let text = TextRecognizer.fullText(lines)
-                    if text.isEmpty { self.status = "没有识别到文字" } else { self.ocrText = text; self.status = "识别到 \(lines.count) 行" }
-                case .failure(let e): self.status = "识别失败：\(e.localizedDescription)"
-                }
-            }
-        }
-    }
+    func runOCR() { TextTools.showOCR(recognitionTarget()) }
 
-    func translate() {
-        let target = recognitionTarget()
-        busy = true; status = "正在识别并翻译…"
-        Task.detached {
-            let result = Result { try TextRecognizer.recognize(target.image) }
-            await MainActor.run {
-                switch result {
-                case .success(let lines) where !lines.isEmpty:
-                    let chinese = TextRecognizer.isMostlyChinese(TextRecognizer.fullText(lines))
-                    let toChinese = self.targetChinese ?? !chinese
-                    let config = TranslationSession.Configuration(source: nil,
-                        target: Locale.Language(identifier: toChinese ? "zh-Hans" : "en"))
-                    self.job = TranslationJob(lines: lines, offset: target.offset, configuration: config)
-                    self.translationConfig = nil
-                    self.translationConfig = config
-                case .success: self.busy = false; self.status = "没有识别到文字"
-                case .failure(let e): self.busy = false; self.status = "识别失败：\(e.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    /// Called from the SwiftUI translation task with the system session.
-    func performTranslation(_ session: TranslationSession) async {
-        guard let job else { return }
-        do {
-            let requests = job.lines.enumerated().map { TranslationSession.Request(sourceText: $1.text, clientIdentifier: "\($0)") }
-            let responses = try await session.translations(from: requests)
-            var out = [String](repeating: "", count: job.lines.count)
-            for r in responses { if let i = Int(r.clientIdentifier ?? ""), i < out.count { out[i] = r.targetText } }
-            let image = doc.rendered()
-            let shifted = job.lines.map { RecognizedLine(text: $0.text, rect: $0.rect.offsetBy(dx: job.offset.x, dy: job.offset.y)) }
-            let overlays = TextRecognizer.overlays(lines: shifted, translations: out, over: image)
-            doc.add(overlays)
-            canvas?.refresh()
-            status = "已翻译 \(overlays.count) 处文字（⌘Z 可还原）"
-        } catch {
-            status = "翻译失败：\(error.localizedDescription)"
-        }
-        busy = false
-        self.job = nil
-    }
+    func translate() { TextTools.showTranslation(recognitionTarget(), toChinese: targetChinese) }
 }
 
 struct RGBAWrapper {

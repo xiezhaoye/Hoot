@@ -41,16 +41,4 @@ public enum TextRecognizer {
         }
         return cjk > other
     }
-
-    /// Turns OCR lines and their translations into overlay annotations that cover the originals.
-    public static func overlays(lines: [RecognizedLine], translations: [String], over image: CGImage) -> [Annotation] {
-        zip(lines, translations).compactMap { line, translated in
-            let t = translated.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty else { return nil }
-            let box = line.rect.insetBy(dx: -2, dy: -1)
-            let bg = Renderer.dominantColor(in: image, rect: box)
-            let fg: RGBA = bg.luminance > 0.55 ? .black : .white
-            return Annotation(.textBox(t, rect: box, background: bg), color: fg)
-        }
-    }
 }
