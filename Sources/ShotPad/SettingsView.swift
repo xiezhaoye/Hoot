@@ -10,6 +10,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("界面") {
+                Toggle("始终在 Dock 显示", isOn: $settings.alwaysInDock)
                 Picker("历史栏位置", selection: $settings.historySide) {
                     Text("左侧").tag(AppSettings.HistorySide.left)
                     Text("右侧").tag(AppSettings.HistorySide.right)
@@ -31,7 +32,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 440)
+        .frame(width: 460, height: 470)
     }
 
     private func test() {
@@ -50,6 +51,7 @@ struct SettingsView: View {
 @MainActor
 enum SettingsWindow {
     private static var window: NSWindow?
+    static var isVisible: Bool { window?.isVisible ?? false }
 
     static func show() {
         if window == nil {
@@ -58,8 +60,13 @@ enum SettingsWindow {
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView())
             w.center()
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+                // the window is still "visible" while willClose is delivered
+                DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.refreshPolicy() }
+            }
             window = w
         }
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

@@ -33,6 +33,7 @@ final class AppSettings: ObservableObject {
 
     enum HistorySide: String { case left, right }
 
+    @Published var alwaysInDock: Bool { didSet { d.set(alwaysInDock, forKey: "alwaysInDock"); (NSApp.delegate as? AppDelegate)?.refreshPolicy() } }
     @Published var historySide: HistorySide { didSet { d.set(historySide.rawValue, forKey: "historySide") } }
     @Published var annotationColor: Color { didSet { store(annotationColor, "annotationColor") } }
     @Published var selectionColor: Color { didSet { store(selectionColor, "selectionColor") } }
@@ -41,6 +42,7 @@ final class AppSettings: ObservableObject {
     @Published var apiKey: String { didSet { Keychain.set("apiKey", apiKey) } }
 
     private init() {
+        alwaysInDock = d.object(forKey: "alwaysInDock") as? Bool ?? true
         historySide = HistorySide(rawValue: d.string(forKey: "historySide") ?? "") ?? .right
         annotationColor = Self.load(d, "annotationColor") ?? Color(red: 0.95, green: 0.2, blue: 0.2)
         selectionColor = Self.load(d, "selectionColor") ?? Color(red: 0.0, green: 0.48, blue: 1.0)

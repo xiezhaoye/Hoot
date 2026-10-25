@@ -50,6 +50,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
         TextTools.warmUp()
+        NSApp.mainMenu = makeMainMenu()
+        refreshPolicy()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Dock icon click with no window open: bring up the latest shot, or the settings if there is none.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { if history.entries.isEmpty { SettingsWindow.show() } else { openLatest() } }
+        return true
+    }
+
+    /// Dock icon + menu bar are always on, or only while an editor / settings window is open.
+    func refreshPolicy() {
+        let wanted = AppSettings.shared.alwaysInDock || !editors.isEmpty || SettingsWindow.isVisible
+        NSApp.setActivationPolicy(wanted ? .regular : .accessory)
+    }
+
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        let appItem = NSMenuItem(); main.addItem(appItem)
+        let app = NSMenu()
+        app.addItem(item("截图", #selector(captureAction)))
+        let prefs = item("设置…", #selector(openSettings)); prefs.keyEquivalent = ","
+        app.addItem(prefs)
+        app.addItem(.separator())
+        let quit = item("退出 ShotPad", #selector(NSApplication.terminate(_:)), target: NSApp); quit.keyEquivalent = "q"
+        app.addItem(quit)
+        appItem.submenu = app
+        let editItem = NSMenuItem(); main.addItem(editItem)
+        let edit = NSMenu(title: "编辑")
+        for (title, sel, key) in [("剪切", #selector(NSText.cut(_:)), "x"), ("复制", #selector(NSText.copy(_:)), "c"),
+                                  ("粘贴", #selector(NSText.paste(_:)), "v"), ("全选", #selector(NSText.selectAll(_:)), "a")] {
+            edit.addItem(withTitle: title, action: sel, keyEquivalent: key)
+        }
+        editItem.submenu = edit
+        return main
     }
 
     private func makeMenu() -> NSMenu {
@@ -129,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             copyImage: { Clipboard.write(image) },
             pin: { PinWindow.show(image) },
             close: { QuickBar.dismiss() })
-        QuickBar.show(near: result.screenRect, actions: actions)
+        QuickBar.show(near: result.screenRect, image: image, actions: actions)
     }
 
     func capture() {
@@ -163,8 +200,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openEditor(image: CGImage, entry: HistoryEntry?) {
         let controller = EditorWindowController(image: image, history: history, entry: entry)
-        controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c }; self?.historyChanged() }
+        controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c }; self?.historyChanged(); self?.refreshPolicy() }
         editors.append(controller)
+        refreshPolicy()
         controller.show()
     }
 }
