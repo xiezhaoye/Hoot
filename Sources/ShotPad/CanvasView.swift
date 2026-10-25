@@ -18,7 +18,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private enum PatchDrag { case move(grab: CGPoint, origin: CGRect), resize(Handle, CGRect) }
     private var patchDrag: PatchDrag?
     private var textField: NSTextField?
-    private var textOrigin: CGPoint = .zero
+    private var editRect: CGRect = .zero         // text box while typing, image pixels
+    private var editFont: CGFloat = 28
+    private var editWidthSet = false
+    private enum EditDrag { case move(grab: CGPoint, origin: CGRect), resize(Handle, CGRect, font: CGFloat) }
+    private var editDrag: EditDrag?
+    private let textPad: CGFloat = 4
     private var editingText: Annotation?          // existing text being re-typed
     private var selectedID: UUID?
     private struct AnnotationDrag {
@@ -41,7 +46,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var selectionColor: NSColor { AppSettings.shared.selectionNSColor }
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
+    // while typing, clicks on the box handles must not steal focus from the field (that would end editing)
+    override var acceptsFirstResponder: Bool { textField == nil }
 
     var doc: EditorDocument? { model?.doc }
 
@@ -178,6 +184,10 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if let r = tool == .select ? selection : cropRect { info += "   \(Int(r.width))×\(Int(r.height))" }
             Magnifier.draw(in: ctx, image: cache, pixel: px, cursor: h, bounds: visibleRect, info: info)
         }
+        if textField != nil {
+            outline(viewRect(editRect), color: selectionColor, dashed: false)
+            drawHandles(viewRect(editRect))
+        }
         if let a = selectedAnnotation, let b = a.bounds {
             outline(viewRect(b), color: selectionColor, dashed: true)
             for (_, pt) in a.handles {
@@ -241,9 +251,17 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     override func mouseDown(with event: NSEvent) {
         guard let model, let doc else { return }
-        window?.makeFirstResponder(self)
-        commitText()
         let p = imagePoint(event)
+        if textField != nil {
+            if let h = Handle.allCases.first(where: { abs($0.point(in: editRect).x - p.x) <= 8 / zoom && abs($0.point(in: editRect).y - p.y) <= 8 / zoom }) {
+                editDrag = .resize(h, editRect, font: editFont); dragStart = p; return
+            }
+            if editRect.insetBy(dx: -14 / zoom, dy: -14 / zoom).contains(p) {
+                editDrag = .move(grab: p, origin: editRect); dragStart = p; return
+            }
+            commitText()
+        }
+        window?.makeFirstResponder(self)
         // a floating block can be resized from its handles whatever tool is active
         if let patch = doc.patch, let h = patch.hitHandle(at: p, slop: 7 / zoom) {
             patchDrag = .resize(h, patch.rect); dragStart = p; return
@@ -254,6 +272,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
                 annDrag = AnnotationDrag(handle: h, original: sel, grab: p); dragStart = p; return
             }
             if let a = doc.annotation(at: p, slop: slop, matching: { self.matches($0, model.tool) }) {
+                if event.clickCount >= 2, case .text = a.kind { selectedID = a.id; beginText(at: .zero, existing: a); return }
                 selectedID = a.id
                 loadStyle(from: a)
                 annDrag = AnnotationDrag(handle: nil, original: a, grab: p); dragStart = p
@@ -283,10 +302,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             beginText(at: p)
             dragStart = nil
         case .number:
-            let a = Annotation(.number(doc.nextNumber(), center: p, diameter: max(24, model.lineWidth * 7)), color: model.color.rgba)
-            doc.add(a)
-            selectedID = a.id
-            refresh()
+            addAndSelect(Annotation(.number(doc.nextNumber(), center: p, diameter: max(24, model.lineWidth * 7)), color: model.color.rgba))
             dragStart = nil
         default: break
         }
@@ -301,6 +317,28 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         guard let model, let doc, let s = dragStart else { return }
         let p = imagePoint(event)
         hoverPoint = convert(event.locationInWindow, from: nil)
+        if let drag = editDrag {
+            switch drag {
+            case .move(let grab, let origin):
+                editRect = origin.offsetBy(dx: (p.x - grab.x).rounded(), dy: (p.y - grab.y).rounded())
+            case .resize(let h, let original, let font):
+                let r = Patch.resized(original, handle: h, to: p)
+                if h == .left || h == .right {
+                    editWidthSet = true
+                    editRect = CGRect(x: r.minX, y: original.minY, width: max(40, r.width), height: original.height)
+                } else {
+                    let vertical = h == .top || h == .bottom
+                    let ratio = max(0.1, vertical ? r.height / original.height : r.width / original.width)
+                    let w = original.width * ratio, hgt = original.height * ratio
+                    editRect = CGRect(x: h.movesLeft ? original.maxX - w : original.minX,
+                                      y: h.movesTop ? original.maxY - hgt : original.minY, width: w, height: hgt)
+                    editFont = max(8, font * ratio)
+                }
+            }
+            syncEditField()
+            needsDisplay = true
+            return
+        }
         if var drag = annDrag {
             if !drag.moved && hypot(p.x - drag.grab.x, p.y - drag.grab.y) < 3 / zoom { return }
             drag.moved = true
@@ -340,12 +378,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         guard let model, let doc, let s = dragStart else { dragStart = nil; return }
-        defer { dragStart = nil; patchDrag = nil; annDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
-        if let drag = annDrag {
-            // a plain click on text goes back into editing
-            if !drag.moved, drag.handle == nil, case .text = drag.original.kind { beginText(at: drag.original.bounds?.origin ?? s, existing: drag.original) }
-            return
-        }
+        if editDrag != nil { editDrag = nil; dragStart = nil; if let f = textField { window?.makeFirstResponder(f) }; return }
+        defer { dragStart = nil; patchDrag = nil; annDrag = nil; editDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
+        if annDrag != nil || editDrag != nil { return }
         if patchDrag != nil { return }
         let e = imagePoint(event)
         let r = CGRect.spanning(s, e).clamped(to: doc.bounds)
@@ -358,8 +393,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .ellipse where big: addAndSelect(Annotation(.ellipse(.spanning(s, e)), color: color, lineWidth: w))
         case .line where big: addAndSelect(Annotation(.line(s, e), color: color, lineWidth: w))
         case .arrow where big: addAndSelect(Annotation(.arrow(s, e), color: color, lineWidth: w))
-        case .pen: doc.add(Annotation(.pen(draftPoints + [e]), color: color, lineWidth: w)); refresh()
-        case .highlighter: doc.add(Annotation(.highlighter(draftPoints + [e]), color: color, lineWidth: w)); refresh()
+        case .pen: AppSettings.shared.noteUsed(color); doc.add(Annotation(.pen(draftPoints + [e]), color: color, lineWidth: w)); refresh()
+        case .highlighter: AppSettings.shared.noteUsed(color); doc.add(Annotation(.highlighter(draftPoints + [e]), color: color, lineWidth: w)); refresh()
         case .mosaic where big: doc.add(Annotation(.mosaic(r, block: max(6, Int(w) * 3)))); refresh()
         case .blur where big: doc.add(Annotation(.blur(r, radius: max(4, Double(w) * 3)))); refresh()
         default: break
@@ -369,6 +404,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Text tool
 
     private func addAndSelect(_ a: Annotation) {
+        AppSettings.shared.noteUsed(a.color)
         doc?.add(a)
         selectedID = a.id
         refresh()
@@ -376,29 +412,47 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     private func beginText(at p: CGPoint, existing: Annotation? = nil) {
         guard let model, let doc else { return }
-        var size = model.fontSize, color = model.color.nsColor, width: CGFloat = 220, text = ""
-        if let existing, case .text(let s, _, let fs) = existing.kind {
-            size = fs; color = existing.color.nsColor; text = s
-            width = existing.boxWidth ?? max(220, (existing.bounds?.width ?? 0) + 40)
+        var size = model.fontSize, color = model.color.nsColor, text = ""
+        let pad = textPad
+        editWidthSet = false
+        if let existing, case .text(let str, _, let fs) = existing.kind, let b = existing.bounds {
+            size = fs; color = existing.color.nsColor; text = str
+            editWidthSet = existing.boxWidth != nil
+            // wider than the text so there is room to keep typing, a little taller than the glyphs
+            editRect = CGRect(x: b.minX - pad, y: b.minY - pad, width: b.width + 2 * pad + (editWidthSet ? 0 : 60), height: b.height + 2 * pad)
             doc.hiddenAnnotationID = existing.id
             editingText = existing
             refresh()
+        } else {
+            let h = Renderer.textSize("Ag", fontSize: size).height
+            editRect = CGRect(x: p.x - pad, y: p.y - pad, width: max(200, size * 8), height: h + 2 * pad)
         }
-        let origin = viewPoint(p)
-        let field = NSTextField(frame: CGRect(x: origin.x, y: origin.y, width: width * zoom, height: size * zoom * 1.5))
-        field.font = .systemFont(ofSize: size * zoom, weight: .medium)
-        field.textColor = color
+        editFont = size
+        let field = NSTextField(frame: .zero)
         field.stringValue = text
         field.isBordered = false
         field.drawsBackground = true
         field.backgroundColor = NSColor.white.withAlphaComponent(0.85)
+        field.textColor = color
         field.focusRingType = .none
-        field.placeholderString = "输入文字，回车确认"
+        field.usesSingleLineMode = false
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.lineBreakMode = .byWordWrapping
+        field.maximumNumberOfLines = 0
+        field.placeholderString = "输入文字，回车确认，⇧回车换行"
         field.delegate = self
         addSubview(field)
-        window?.makeFirstResponder(field)
         textField = field
-        textOrigin = p
+        syncEditField()
+        window?.makeFirstResponder(field)
+        needsDisplay = true
+    }
+
+    private func syncEditField() {
+        guard let field = textField else { return }
+        field.frame = viewRect(editRect)
+        field.font = .systemFont(ofSize: editFont * zoom, weight: .medium)
     }
 
     func commitText() {
@@ -407,22 +461,48 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         let s = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         field.delegate = nil
         field.removeFromSuperview()
+        let avail = editRect.width - 2 * textPad
+        let natural = Renderer.textSize(s, fontSize: editFont).width
+        let wrapWidth: CGFloat? = (editWidthSet || natural > avail + 1) ? avail : nil
+        let origin = CGPoint(x: editRect.minX + textPad, y: editRect.minY + textPad)
         if let original = editingText {
             editingText = nil
             doc.hiddenAnnotationID = nil
             if s.isEmpty {
                 doc.removeAnnotation(original.id)
-            } else if case .text(let old, let o, let size) = original.kind, old != s {
+            } else {
                 var edited = original
-                edited.kind = .text(s, origin: o, fontSize: size)
+                edited.kind = .text(s, origin: origin, fontSize: editFont)
+                edited.boxWidth = wrapWidth
                 doc.replaceAnnotation(edited, record: true)
             }
             selectedID = s.isEmpty ? nil : original.id
             refresh()
         } else if !s.isEmpty {
-            let a = Annotation(.text(s, origin: textOrigin, fontSize: model.fontSize), color: model.color.rgba)
+            var a = Annotation(.text(s, origin: origin, fontSize: editFont), color: model.color.rgba)
+            a.boxWidth = wrapWidth
+            model.fontSize = editFont
             addAndSelect(a)
         }
+        needsDisplay = true
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = textField else { return }
+        // grow the box when the text no longer fits
+        let need = Renderer.textSize(field.stringValue, fontSize: editFont, width: editRect.width - 2 * textPad).height + 2 * textPad
+        if need > editRect.height { editRect.size.height = need; syncEditField(); needsDisplay = true }
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
+        if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+            textView.insertNewlineIgnoringFieldEditor(nil)
+            return true
+        }
+        commitText()
+        window?.makeFirstResponder(self)
+        return true
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
@@ -436,6 +516,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         guard textField == nil, event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
               let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         switch key {
+        case "x": cutSelection(); return true
         case "c": copySelection(); return true
         case "v": pasteImage(); return true
         case "s": model?.saveAs(); return true
@@ -479,6 +560,28 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if let patch = doc.patch { Clipboard.write(patch.image); model?.status = "已复制浮动块"; return }
         if let s = selection, let img = doc.copyRegion(s) { Clipboard.write(img); model?.status = "已复制选区 \(img.width)×\(img.height)"; return }
         Clipboard.write(doc.flattened()); model?.status = "已复制整张图片"
+    }
+
+    func cutSelection() {
+        guard let doc else { return }
+        if let patch = doc.patch {
+            Clipboard.write(patch.image); doc.deletePatch(); refresh(); model?.status = "已剪切浮动块"
+        } else if let s = selection, let img = doc.copyRegion(s) {
+            Clipboard.write(img); doc.erase(s); selection = nil; refresh(); model?.status = "已剪切选区 \(img.width)×\(img.height)，可粘贴到本图或其他历史截图"
+        } else { NSSound.beep() }
+    }
+
+    // responder-chain entry points, so the Edit menu and the context menu work too
+    @objc(cut:) func cutAction(_ sender: Any?) { cutSelection() }
+    @objc(copy:) func copyAction(_ sender: Any?) { copySelection() }
+    @objc(paste:) func pasteAction(_ sender: Any?) { pasteImage() }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let m = NSMenu()
+        m.addItem(withTitle: "剪切", action: #selector(cutAction(_:)), keyEquivalent: "").target = self
+        m.addItem(withTitle: "复制", action: #selector(copyAction(_:)), keyEquivalent: "").target = self
+        m.addItem(withTitle: "粘贴", action: #selector(pasteAction(_:)), keyEquivalent: "").target = self
+        return m
     }
 
     func pasteImage() {

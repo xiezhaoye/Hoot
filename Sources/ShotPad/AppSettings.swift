@@ -41,11 +41,22 @@ final class AppSettings: ObservableObject {
     @Published var model: String { didSet { d.set(model, forKey: "llmModel") } }
     @Published var apiKey: String { didSet { Keychain.set("apiKey", apiKey) } }
 
+    /// Most recently used annotation colours, newest first (at most 10).
+    @Published private(set) var recentColors: [RGBA] = []
+
+    func noteUsed(_ c: RGBA) {
+        var list = recentColors.filter { abs($0.r - c.r) + abs($0.g - c.g) + abs($0.b - c.b) + abs($0.a - c.a) > 0.01 }
+        list.insert(c, at: 0)
+        recentColors = Array(list.prefix(10))
+        d.set(recentColors.map { [$0.r, $0.g, $0.b, $0.a] }, forKey: "recentColors")
+    }
+
     private init() {
         alwaysInDock = d.object(forKey: "alwaysInDock") as? Bool ?? true
         historySide = HistorySide(rawValue: d.string(forKey: "historySide") ?? "") ?? .right
         annotationColor = Self.load(d, "annotationColor") ?? Color(red: 0.95, green: 0.2, blue: 0.2)
         selectionColor = Self.load(d, "selectionColor") ?? Color(red: 0.0, green: 0.48, blue: 1.0)
+        recentColors = ((d.array(forKey: "recentColors") as? [[Double]]) ?? []).filter { $0.count == 4 }.map { RGBA($0[0], $0[1], $0[2], $0[3]) }
         baseURL = d.string(forKey: "llmBaseURL") ?? ""
         model = d.string(forKey: "llmModel") ?? ""
         apiKey = Keychain.get("apiKey")

@@ -17,10 +17,10 @@ public enum Handle: CaseIterable {
         }
     }
 
-    var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
-    var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
-    var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
-    var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
+    public var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
+    public var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
+    public var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
+    public var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
 }
 
 /// A floating block of pixels pasted over the canvas. Resizing scales its pixels

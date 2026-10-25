@@ -90,13 +90,18 @@ struct EditorView: View {
         HStack(spacing: 10) {
             switch model.tool {
             case .rect, .ellipse, .line, .arrow, .pen, .highlighter, .number:
-                ColorPicker("颜色", selection: $model.colorValue)
+                colorControls
                 HStack { Text("粗细").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
             case .mosaic, .blur:
                 HStack { Text("强度").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
             case .text:
-                ColorPicker("颜色", selection: $model.colorValue)
-                Stepper("字号 \(Int(model.fontSize))", value: $model.fontSize, in: 10...120, step: 2).font(.caption)
+                colorControls
+                Menu("字号 \(Int(model.fontSize))") {
+                    ForEach([12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96], id: \.self) { n in
+                        Button("\(n)") { model.fontSize = CGFloat(n) }
+                    }
+                }.fixedSize()
+                Stepper("", value: $model.fontSize, in: 8...200, step: 2).labelsHidden()
             case .select, .crop:
                 ColorPicker("选区框颜色", selection: $settings.selectionColor)
             }
@@ -105,6 +110,30 @@ struct EditorView: View {
         }
         .controlSize(.small)
         .padding(.horizontal, 10).padding(.vertical, 5)
+    }
+
+    /// Colour well, eyedropper and the ten most recently used colours.
+    private var colorControls: some View {
+        HStack(spacing: 6) {
+            ColorPicker("", selection: $model.colorValue).labelsHidden()
+            Button { pickScreenColor() } label: { Image(systemName: "eyedropper") }.help("吸取屏幕上的颜色")
+            HStack(spacing: 3) {
+                ForEach(Array(settings.recentColors.enumerated()), id: \.offset) { _, c in
+                    Button { model.colorValue = Color(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a) } label: {
+                        Circle().fill(Color(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a)).frame(width: 16, height: 16)
+                            .overlay(Circle().stroke(.gray.opacity(0.5), lineWidth: 0.5))
+                    }.buttonStyle(.plain).help("最近使用的颜色")
+                }
+            }
+        }
+    }
+
+    private func pickScreenColor() {
+        NSColorSampler().show { picked in
+            guard let picked, let c = picked.usingColorSpace(.sRGB) else { return }
+            model.colorValue = Color(.sRGB, red: Double(c.redComponent), green: Double(c.greenComponent), blue: Double(c.blueComponent), opacity: 1)
+            AppSettings.shared.noteUsed(RGBA(Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)))
+        }
     }
 
     private static let groupTitles: [HistoryGroup: String] = [.normal: "正常", .ocr: "提取文字", .translate: "翻译"]
