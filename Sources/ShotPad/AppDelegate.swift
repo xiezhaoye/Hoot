@@ -161,11 +161,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = result.image
         let entry = history.add(image)
         historyChanged()
-        let mark: (HistoryGroup) -> Void = { [weak self] group in
-            guard let self, let id = entry?.id else { return }
-            self.history.setGroup(id, group)
-            self.historyChanged()
-        }
         let actions = QuickActions(
             copyText: { report in
                 Task { @MainActor in
@@ -174,12 +169,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         if text.isEmpty { report("没有识别到文字"); return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
-                        mark(.ocr)
                         report("已复制 \(text.count) 字")
                     } catch { report("识别失败") }
                 }
             },
-            translate: { TextTools.showTranslation(image, toChinese: nil) { ok in if ok { mark(.translate) } } },
+            translate: { TextTools.showTranslation(image, toChinese: nil) { _ in } },
             edit: { [weak self] in QuickBar.dismiss(); self?.openEditor(image: image, entry: entry) },
             copyImage: { Clipboard.write(image) },
             pin: { PinWindow.show(image) },

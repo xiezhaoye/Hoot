@@ -252,3 +252,34 @@ final class HistoryGroupTests: XCTestCase {
         XCTAssertEqual(HistoryStore(directory: dir, limit: 5).entries.first?.group, .normal)
     }
 }
+
+
+final class BrowseStoreTests: XCTestCase {
+    func testGroupsFoldersAndListing() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("browse-\(UUID().uuidString)")
+        let pics = root.appendingPathComponent("pics")
+        try FileManager.default.createDirectory(at: pics.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        for n in ["b10.png", "b2.PNG", "a.jpg", "note.txt", ".hidden.png"] { FileManager.default.createFile(atPath: pics.appendingPathComponent(n).path, contents: Data()) }
+        FileManager.default.createFile(atPath: pics.appendingPathComponent("sub/deep.png").path, contents: Data())
+
+        let file = root.appendingPathComponent("browse.json")
+        let store = BrowseStore(file: file)
+        let g = store.addGroup("旅行")
+        XCTAssertNotNil(store.addFolder(pics, to: g.id))
+        XCTAssertNil(store.addFolder(pics, to: g.id), "duplicate folder in a group is rejected")
+        store.renameGroup(g.id, to: "工作")
+
+        let reloaded = BrowseStore(file: file)
+        XCTAssertEqual(reloaded.groups.first?.name, "工作")
+        XCTAssertEqual(reloaded.groups.first?.folders.count, 1)
+        XCTAssertTrue(reloaded.groups[0].folders[0].exists)
+
+        let names = BrowseStore.images(in: pics).map(\.lastPathComponent)
+        XCTAssertEqual(names, ["a.jpg", "b2.PNG", "b10.png"])
+
+        reloaded.removeFolder(reloaded.groups[0].folders[0].id, from: g.id)
+        XCTAssertTrue(reloaded.groups[0].folders.isEmpty)
+        reloaded.removeGroup(g.id)
+        XCTAssertTrue(reloaded.groups.isEmpty)
+    }
+}

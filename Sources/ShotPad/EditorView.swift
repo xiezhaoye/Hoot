@@ -31,20 +31,29 @@ private let toolIcons: [(Tool, String, String)] = [
     (.text, "text:A", "文字"), (.number, "1.circle", "序号"), (.crop, "crop", "裁剪（回车确认）"),
 ]
 
+enum SideTab: String, CaseIterable { case shots = "截图", browse = "浏览" }
+
 struct EditorView: View {
     @ObservedObject var model: EditorModel
     @ObservedObject var settings = AppSettings.shared
-    @State private var group: HistoryGroup = .normal
+    @StateObject private var browse = BrowseModel()
+    @State private var tab: SideTab = .shots
 
     var body: some View {
         HStack(spacing: 0) {
             if settings.historySide == .left { historyPane; Divider() }
-            VStack(spacing: 0) {
-                toolbar
-                Divider()
-                optionsBar
-                Divider()
-                CanvasRepresentable(model: model)
+            ZStack {
+                VStack(spacing: 0) {
+                    toolbar
+                    Divider()
+                    optionsBar
+                    Divider()
+                    CanvasRepresentable(model: model)
+                }
+                .opacity(tab == .shots ? 1 : 0).allowsHitTesting(tab == .shots)
+                if tab == .browse {
+                    BrowseDetail(model: browse) { image in editFromBrowse(image) }
+                }
             }
             if settings.historySide == .right { Divider(); historyPane }
         }
@@ -136,25 +145,36 @@ struct EditorView: View {
         }
     }
 
-    private static let groupTitles: [HistoryGroup: String] = [.normal: "正常", .ocr: "提取文字", .translate: "翻译"]
+    /// Sends a browsed picture to the editor as a new 截图 entry; the original file is never touched.
+    private func editFromBrowse(_ image: CGImage) {
+        guard let entry = model.history.add(image) else { return }
+        model.entries = model.history.entries
+        model.open(entry)
+        tab = .shots
+    }
 
     private var historyPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Picker("", selection: $group) {
-                ForEach(HistoryGroup.allCases, id: \.self) { Text(Self.groupTitles[$0] ?? "").tag($0) }
+            Picker("", selection: $tab) {
+                ForEach(SideTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().padding(8)
             Divider()
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(model.entries.filter { $0.group == group }) { entry in
-                        HistoryThumb(model: model, entry: entry)
+            switch tab {
+            case .shots:
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(model.entries) { entry in
+                            HistoryThumb(model: model, entry: entry)
+                        }
                     }
+                    .padding(8)
                 }
-                .padding(8)
+            case .browse:
+                BrowseSidebar(model: browse)
             }
         }
-        .frame(width: 190)
+        .frame(width: 200)
     }
 }
 
