@@ -11,10 +11,10 @@ final class EditorModel: ObservableObject {
     @Published var doc: EditorDocument
     @Published var tool: Tool = .select
     @Published var colorValue: Color = AppSettings.shared.annotationColor {
-        didSet { AppSettings.shared.annotationColor = colorValue }
+        didSet { AppSettings.shared.annotationColor = colorValue; canvas?.styleChanged(.color) }
     }
-    @Published var lineWidth: CGFloat = 3
-    @Published var fontSize: CGFloat = 28
+    @Published var lineWidth: CGFloat = 3 { didSet { canvas?.styleChanged(.width) } }
+    @Published var fontSize: CGFloat = 28 { didSet { canvas?.styleChanged(.font) } }
     @Published var status = ""
     @Published var entries: [HistoryEntry] = []
     @Published var currentID: UUID?
@@ -52,7 +52,7 @@ final class EditorModel: ObservableObject {
         persistCurrent()
         doc = EditorDocument(image: image)
         currentID = entry.id
-        canvas?.reload()
+        canvas?.reload(resetScroll: true)
         status = "已打开历史截图"
     }
 

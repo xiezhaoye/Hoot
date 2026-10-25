@@ -74,10 +74,10 @@ final class DocumentTests: XCTestCase {
         for x in 4..<8 { XCTAssertEqual(pixel(out, x, 1).0, 0); XCTAssertEqual(pixel(out, x, 1).1, 255) }
     }
 
-    func testPasteClampedInsideCanvas() {
+    func testPasteLandsAtCursorEvenOutsideCanvas() {
         let doc = EditorDocument(image: solid(50, 50, .white))
         doc.paste(solid(20, 20, .red), centeredAt: CGPoint(x: 49, y: 1))
-        XCTAssertEqual(doc.patch?.rect, CGRect(x: 30, y: 0, width: 20, height: 20))
+        XCTAssertEqual(doc.patch?.rect, CGRect(x: 39, y: -9, width: 20, height: 20))
     }
 
     func testCropAndAnnotationsAreBaked() {
@@ -159,6 +159,55 @@ final class LiftTests: XCTestCase {
         let doc = EditorDocument(image: solid(100, 50, .white))
         doc.paste(solid(400, 200, .red), centeredAt: CGPoint(x: 50, y: 25))
         XCTAssertEqual(doc.patch?.rect, CGRect(x: 0, y: 0, width: 100, height: 50))
+    }
+}
+
+final class EditingTests: XCTestCase {
+    func testCommitOutsideGrowsCanvasWhiteAndShiftsAnnotations() {
+        let doc = EditorDocument(image: solid(50, 50, RGBA(0, 0, 1)))
+        let rect = Annotation(.rect(CGRect(x: 10, y: 10, width: 20, height: 20)), color: .black, lineWidth: 2)
+        doc.add(rect)
+        doc.paste(solid(20, 20, .red), centeredAt: CGPoint(x: 5, y: 5))      // sticks out left/top by 5
+        doc.commitPatch()
+        XCTAssertEqual(doc.size, CGSize(width: 55, height: 55))
+        let out = doc.rendered()
+        XCTAssertEqual(pixel(out, 1, 1).0, 242)                  // red patch
+        XCTAssertTrue(pixel(out, 53, 1) == (255, 255, 255))       // grown white area (top-right)
+        XCTAssertEqual(pixel(out, 40, 40).2, 255)                // old blue content moved by (5,5)
+        doc.undo()
+        XCTAssertEqual(doc.size, CGSize(width: 50, height: 50))
+    }
+
+    func testEraseAndDeletePatch() {
+        let doc = EditorDocument(image: solid(30, 30, RGBA(0, 0, 1)))
+        doc.erase(CGRect(x: 5, y: 5, width: 10, height: 10))
+        XCTAssertTrue(pixel(doc.rendered(), 8, 8) == (255, 255, 255))
+        doc.liftSelection(CGRect(x: 20, y: 20, width: 5, height: 5))
+        doc.deletePatch()
+        XCTAssertNil(doc.patch)
+        XCTAssertTrue(pixel(doc.rendered(), 22, 22) == (255, 255, 255))
+    }
+
+    func testHitAndDragAnnotations() {
+        let r = Annotation(.rect(CGRect(x: 10, y: 10, width: 40, height: 30)), color: .black, lineWidth: 2)
+        XCTAssertTrue(r.hit(CGPoint(x: 10, y: 25), slop: 3))
+        XCTAssertFalse(r.hit(CGPoint(x: 30, y: 25), slop: 3))        // inside an outline is empty
+        let moved = r.dragged(.box(.bottomRight), to: CGPoint(x: 70, y: 60))
+        if case .rect(let nr) = moved.kind { XCTAssertEqual(nr.maxX, 69); XCTAssertEqual(nr.minX, 10) } else { XCTFail() }
+        XCTAssertEqual(moved.id, r.id)
+        let line = Annotation(.line(CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0)), lineWidth: 2)
+        XCTAssertTrue(line.hit(CGPoint(x: 50, y: 2), slop: 3))
+        XCTAssertFalse(line.hit(CGPoint(x: 50, y: 20), slop: 3))
+    }
+
+    func testTextCornerScalesFontAndSideWraps() {
+        let t = Annotation(.text("Hello world", origin: CGPoint(x: 10, y: 10), fontSize: 20))
+        let b = t.bounds!
+        let grown = t.dragged(.box(.bottomRight), to: CGPoint(x: b.minX + b.width * 2, y: b.maxY * 2))
+        if case .text(_, _, let size) = grown.kind { XCTAssertEqual(size, 40, accuracy: 0.5) } else { XCTFail() }
+        let wrapped = t.dragged(.box(.right), to: CGPoint(x: b.minX + 40, y: 0))
+        XCTAssertEqual(wrapped.boxWidth ?? 0, 40, accuracy: 0.5)
+        if case .text(_, _, let size) = wrapped.kind { XCTAssertEqual(size, 20) } else { XCTFail() }
     }
 }
 

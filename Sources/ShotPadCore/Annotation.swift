@@ -36,6 +36,8 @@ public struct Annotation: Identifiable {
     public var kind: Kind
     public var color: RGBA
     public var lineWidth: CGFloat
+    /// Wrap width for `.text`; nil means one unwrapped line.
+    public var boxWidth: CGFloat?
 
     public init(_ kind: Kind, color: RGBA = .red, lineWidth: CGFloat = 3) {
         self.kind = kind

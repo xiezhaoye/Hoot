@@ -42,9 +42,9 @@ struct EditorView: View {
             VStack(spacing: 0) {
                 toolbar
                 Divider()
-                CanvasRepresentable(model: model)
-                Divider()
                 optionsBar
+                Divider()
+                CanvasRepresentable(model: model)
             }
             if settings.historySide == .right { Divider(); historyPane }
         }
@@ -85,7 +85,7 @@ struct EditorView: View {
         .padding(8)
     }
 
-    /// Settings for the active tool appear here; the status text sits on the right.
+    /// Second row: settings for the active tool (and for the selected annotation); the status text sits on the right.
     private var optionsBar: some View {
         HStack(spacing: 10) {
             switch model.tool {

@@ -76,7 +76,7 @@ public enum Renderer {
                 drawImage(ctx, out, in: r.integral.clamped(to: CGRect(x: 0, y: 0, width: snap.width, height: snap.height)))
             }
         case .text(let s, let origin, let size):
-            drawText(ctx, s, at: origin, font: .systemFont(ofSize: size, weight: .medium), color: a.color)
+            drawText(ctx, s, at: origin, font: .systemFont(ofSize: size, weight: .medium), color: a.color, width: a.boxWidth)
         case .number(let n, let c, let d):
             let r = CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
             ctx.fillEllipse(in: r)
@@ -114,15 +114,31 @@ public enum Renderer {
     }
 
     /// Draws text in a context whose y axis points down.
-    static func drawText(_ ctx: CGContext, _ s: String, at p: CGPoint, font: NSFont, color: RGBA) {
+    static func drawText(_ ctx: CGContext, _ s: String, at p: CGPoint, font: NSFont, color: RGBA, width: CGFloat? = nil) {
         let gc = NSGraphicsContext(cgContext: ctx, flipped: true)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = gc
-        NSAttributedString(string: s, attributes: [
+        let str = NSAttributedString(string: s, attributes: [
             .font: font,
             .foregroundColor: NSColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: color.a),
-        ]).draw(at: p)
+        ])
+        if let width {
+            str.draw(with: CGRect(x: p.x, y: p.y, width: width, height: 10_000), options: [.usesLineFragmentOrigin])
+        } else {
+            str.draw(at: p)
+        }
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Size the text occupies at `fontSize`, wrapped to `width` when given.
+    public static func textSize(_ s: String, fontSize: CGFloat, width: CGFloat? = nil) -> CGSize {
+        let str = NSAttributedString(string: s, attributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .medium)])
+        if let width {
+            let r = str.boundingRect(with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin])
+            return CGSize(width: width, height: ceil(r.height))
+        }
+        let sz = str.size()
+        return CGSize(width: ceil(sz.width), height: ceil(sz.height))
     }
 
     /// Largest font size (≤ 90% of the box height) at which `s` fits the box width.
