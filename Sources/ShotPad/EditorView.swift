@@ -4,236 +4,365 @@ import ShotPadCore
 
 struct CanvasRepresentable: NSViewRepresentable {
     @ObservedObject var model: EditorModel
-
     func makeNSView(context: Context) -> NSScrollView {
         let canvas = CanvasView(frame: .zero)
         let scroll = NSScrollView()
         scroll.documentView = canvas
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = true
-        scroll.drawsBackground = true
-        scroll.backgroundColor = CanvasView.surround
+        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true; scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = true; scroll.backgroundColor = CanvasView.surround
         model.canvas = canvas
         DispatchQueue.main.async { canvas.attach(model) }
         return scroll
     }
-
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        (scroll.documentView as? CanvasView)?.window?.invalidateCursorRects(for: scroll.documentView!)
+        guard let canvas = scroll.documentView as? CanvasView else { return }
+        canvas.window?.invalidateCursorRects(for: canvas)
     }
 }
-
-private let toolIcons: [(Tool, String, String)] = [
-    (.select, "rectangle.dashed", "选区 / 复制粘贴 / 移动覆盖"),
-    (.rect, "rectangle", "矩形"), (.ellipse, "circle", "圆圈"), (.line, "line.diagonal", "直线"),
-    (.arrow, "arrow.up.right", "箭头"), (.pen, "pencil.tip", "画笔"), (.highlighter, "highlighter", "荧光笔"),
-    (.mosaic, "squareshape.split.3x3", "马赛克"), (.blur, "drop", "模糊"),
-    (.text, "text:A", "文字"), (.number, "1.circle", "序号"), (.crop, "crop", "裁剪（回车确认）"),
-]
 
 enum SideTab: String, CaseIterable { case shots = "截图", browse = "浏览" }
 
 struct EditorView: View {
     @ObservedObject var model: EditorModel
-    @ObservedObject var settings = AppSettings.shared
+    @ObservedObject private var settings = AppSettings.shared
     @StateObject private var browse = BrowseModel()
     @State private var tab: SideTab = .shots
+    @State private var query = ""
+    @State private var notice = ""
+    @State private var noticeTask: Task<Void, Never>?
+    @State private var directionOpen = false
+    @State private var windowWidth: CGFloat = 1400
 
     var body: some View {
+        VStack(spacing: 0) {
+            titlebar
+            Divider()
+            workspace
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+    }
+
+    private var workspace: some View {
         HStack(spacing: 0) {
             if settings.historySide == .left { historyPane; Divider() }
+            GeometryReader { geometry in
             ZStack {
-                VStack(spacing: 0) {
-                    toolbar
-                    Divider()
-                    optionsBar
-                    Divider()
-                    CanvasRepresentable(model: model)
-                }
-                .opacity(tab == .shots ? 1 : 0).allowsHitTesting(tab == .shots)
-                if tab == .browse {
-                    BrowseDetail(model: browse) { image in editFromBrowse(image) }
-                }
+                editor.opacity(tab == .shots ? 1 : 0).allowsHitTesting(tab == .shots)
+                if tab == .browse { BrowseDetail(model: browse, onEdit: editFromBrowse) }
+            }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
             }
             if settings.historySide == .right { Divider(); historyPane }
         }
+        .tint(EditorStyle.accent)
+        .onChange(of: model.status) { _, value in
+            noticeTask?.cancel(); notice = value
+            guard !value.isEmpty else { return }
+            noticeTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                notice = ""
+            }
+        }
+        .onDisappear { noticeTask?.cancel() }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 4) {
-            ForEach(toolIcons, id: \.0) { tool, icon, help in
-                let on = model.tool == tool
-                Button {
-                    model.canvas?.finishTextEditing()
-                    model.tool = on ? .hand : tool          // pressing the active tool again puts it down
-                    model.canvas?.window?.invalidateCursorRects(for: model.canvas!)
-                } label: {
-                    Group {
-                        if icon.hasPrefix("text:") {
-                            Text(String(icon.dropFirst(5))).font(.system(size: 15, weight: .bold, design: .serif))
-                        } else {
-                            Image(systemName: icon)
-                        }
+    private var editor: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                markupBar
+                Divider()
+                CanvasRepresentable(model: model).overlay(alignment: .bottom) {
+                    if !notice.isEmpty {
+                        Text(notice).font(.system(size: 12)).lineLimit(3)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(EditorStyle.separator, lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+                            .padding(18).allowsHitTesting(false).accessibilityLabel("操作结果：\(notice)")
                     }
-                    .frame(width: 26, height: 22)
-                    .foregroundStyle(on ? Color.white : Color.primary)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(on ? Color.accentColor : Color.clear))
                 }
-                .buttonStyle(.bordered)
-                .help(help)
+                Divider()
+                statusBar
+            }.frame(minWidth: 480)
+            if model.inspectorVisible {
+                Divider()
+                EditorInspector(model: model).frame(width: EditorStyle.inspectorWidth)
             }
-            Spacer(minLength: 12)
-            Button { (NSApp.delegate as? AppDelegate)?.capture() } label: {
-                Image(systemName: "camera.viewfinder").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 30, height: 30).background(Circle().fill(Color.accentColor))
+        }
+    }
+
+    private var titlebar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                EditorTrafficLights().frame(width: 88, height: 70)
+                Text("Hoot").font(.system(size: 22, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain).help("截图 \(settings.captureShortcutText)")
+            .frame(width: EditorStyle.sidebarWidth, height: 70)
+            .background(EditorStyle.sidebar)
+            Divider()
+            HStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Button { (NSApp.delegate as? AppDelegate)?.capture() } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: "camera.viewfinder").font(.system(size: 20))
+                            Text("截图").font(.system(size: 14, weight: .medium))
+                        }.padding(.horizontal, 12).frame(height: 38)
+                            .contentShape(RoundedRectangle(cornerRadius: 7))
+                    }.buttonStyle(.plain).help("截图 \(settings.captureShortcutText)").accessibilityLabel("截图")
+                    EditorWindowDragArea().frame(minWidth: 6, maxWidth: .infinity, maxHeight: .infinity)
+                    if tab == .shots { headerActions.fixedSize(horizontal: true, vertical: false) }
+                }.padding(.horizontal, 16).frame(maxWidth: .infinity)
+                Divider()
+                Group {
+                    if tab == .shots { outputActions }
+                    else {
+                        Button(action: editBrowseImage) {
+                            Label("编辑图片", systemImage: "square.and.pencil")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(maxWidth: .infinity).frame(height: 38)
+                        }.buttonStyle(.plain).foregroundStyle(.white)
+                            .background(EditorStyle.accent, in: RoundedRectangle(cornerRadius: 7))
+                            .disabled(browse.current == nil).opacity(browse.current == nil ? 0.4 : 1)
+                            .help("送进编辑器，结果另存到“截图”，不改原文件（回车）")
+                    }
+                }.padding(.horizontal, 12).frame(width: EditorStyle.inspectorWidth)
+            }.frame(maxWidth: .infinity).frame(height: 70)
+                .background(EditorStyle.panel.opacity(0.7))
+        }.frame(height: 70)
+    }
+    private func editBrowseImage() {
+        guard let url = browse.current, let image = ImageLoader.loadFull(url) else { return }
+        editFromBrowse(image)
+    }
+    private var headerActions: some View {
+        HStack(spacing: 6) {
+            Button { model.canvas?.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                .buttonStyle(EditorIconButtonStyle()).disabled(!model.doc.canUndo).help("撤销 ⌘Z").accessibilityLabel("撤销")
+            Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                .buttonStyle(EditorIconButtonStyle()).disabled(!model.doc.canRedo).help("重做 ⇧⌘Z").accessibilityLabel("重做")
+            headerSeparator
+            Button { model.runOCR() } label: {
+                HStack(spacing: 7) { Image(systemName: "text.viewfinder").font(.system(size: 16)); if windowWidth >= 1180 { Text("识别文字").fixedSize() } }
+            }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("识别文字").help("识别选区或整张图像中的文字")
+            HStack(spacing: 0) {
+                Button { model.translate() } label: {
+                    HStack(spacing: 6) { Image(systemName: "translate").font(.system(size: 16)); if windowWidth >= 1180 { Text("翻译").fixedSize() } }
+                }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("翻译").help("翻译选区或整张图像中的文字")
+                Button { directionOpen.toggle() } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 8)).foregroundStyle(.secondary).frame(width: 12, height: 30)
+                }.buttonStyle(.plain).accessibilityLabel("翻译方向")
+                    .help("翻译方向：\(model.targetChinese.map { $0 ? "译成中文" : "译成英文" } ?? "自动方向")")
+                    .popover(isPresented: $directionOpen) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            directionChoice("自动方向", value: nil)
+                            directionChoice("译成中文", value: true)
+                            directionChoice("译成英文", value: false)
+                        }.padding(6).frame(width: 150)
+                    }
+            }
+        }
+    }
+    private var outputActions: some View {
+        HStack(spacing: 6) {
+            Button { model.copyAll() } label: { Image(systemName: "square.on.square") }
+                .buttonStyle(EditorIconButtonStyle()).help("复制整张图像").accessibilityLabel("复制图像")
+            EditorShareButton { model.canvas?.finishTextEditing(); return model.doc.flattened() }.frame(width: 32, height: 32)
+            Spacer(minLength: 24)
+            Button { model.inspectorVisible.toggle() } label: { Image(systemName: "sidebar.right") }
+                .buttonStyle(EditorIconButtonStyle())
+                .background(model.inspectorVisible ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .help("显示或隐藏检查器").accessibilityLabel("显示或隐藏检查器")
+        }
+    }
+    private var headerSeparator: some View { Rectangle().fill(EditorStyle.separator).frame(width: 1, height: 20).padding(.horizontal, 7) }
+    private func directionChoice(_ title: String, value: Bool?) -> some View {
+        Button { model.targetChinese = value; directionOpen = false } label: {
+            HStack { Text(title); Spacer(); if model.targetChinese == value { Image(systemName: "checkmark").font(.system(size: 10)) } }
+                .font(.system(size: 12)).padding(8).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityAddTraits(model.targetChinese == value ? .isSelected : [])
+    }
+    private var markupBar: some View {
+        HStack(spacing: 10) {
+            toolGroup([.hand, .select]); toolDivider
+            ViewThatFits(in: .horizontal) {
+                toolGroup([.rect, .ellipse, .line, .arrow, .pen, .highlighter, .text, .number, .mosaic, .blur])
+                HStack(spacing: 3) {
+                    toolGroup([.rect, .ellipse, .arrow, .pen, .text, .mosaic])
+                    Menu {
+                        ForEach([Tool.line, .highlighter, .number, .blur], id: \.self) { tool in
+                            Button { model.chooseTool(tool) } label: { Label(tool.title, systemImage: tool.symbol) }
+                        }
+                    } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).frame(width: 26).help("更多标注工具")
+                }
+            }
+            toolDivider; toolButton(.crop)
+            Spacer(minLength: 0)
+            Menu {
+                Button("适合窗口") { model.canvas?.zoomToFit() }
+                Divider()
+                ForEach([25, 50, 100, 150, 200, 400, 800], id: \.self) { p in
+                    Button("\(p)%") { model.canvas?.setZoomPercent(p) }
+                }
+            } label: { Text(model.zoomFitted ? "适合窗口" : "\(model.zoomPercent)%").font(.system(size: 11)).monospacedDigit() }
+            .menuStyle(.borderlessButton).fixedSize().help("缩放：捏合或 ⌘+ / ⌘-；⌘0 恢复 100%")
+        }.padding(.horizontal, 16).frame(height: 46).background(.bar)
+    }
+    private var toolDivider: some View { Divider().frame(height: 18) }
+    private func toolGroup(_ tools: [Tool]) -> some View {
+        HStack(spacing: 3) { ForEach(tools, id: \.self) { toolButton($0) } }
+    }
+    private func toolButton(_ tool: Tool) -> some View {
+        Button { model.chooseTool(tool) } label: {
+            if tool == .text { Text("A").font(.system(size: 16, weight: .bold, design: .serif)) }
+            else { Image(systemName: tool.symbol) }
+        }
+            .buttonStyle(EditorIconButtonStyle(selected: model.tool == tool))
+            .help(tool.title).accessibilityLabel(tool.title)
+            .accessibilityAddTraits(model.tool == tool ? .isSelected : [])
+    }
+
+    private var statusBar: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "photo").font(.system(size: 10))
+            Text("\(Int(model.doc.size.width)) × \(Int(model.doc.size.height)) 像素").monospacedDigit()
+            Text("·"); Text(model.currentEntry?.formatLabel ?? "PNG")
             Spacer(minLength: 12)
             if model.hasPatch {
-                Button("确认浮动块") { model.canvas?.finishPatch() }.buttonStyle(.borderedProminent)
+                Button("确认浮动块 ⏎") { model.canvas?.finishPatch() }
                 Button("取消") { model.canvas?.cancelPatch() }
-                Divider().frame(height: 18)
-            }
-            Button { model.canvas?.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .disabled(!(model.revision >= 0 && model.doc.canUndo)).help("撤销 ⌘Z")
-            Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                .disabled(!(model.revision >= 0 && model.doc.canRedo)).help("重做 ⇧⌘Z")
-            Divider().frame(height: 18)
-            Button("识别文字") { model.runOCR() }
-            Button("翻译") { model.translate() }
-            Picker("", selection: Binding(get: { model.targetChinese.map { $0 ? 1 : 2 } ?? 0 },
-                                          set: { model.targetChinese = $0 == 0 ? nil : $0 == 1 })) {
-                Text("自动方向").tag(0); Text("译成中文").tag(1); Text("译成英文").tag(2)
-            }.labelsHidden().frame(width: 100)
-        }
-        .padding(8)
-    }
-
-    /// Second row: settings for the active tool (and for the selected annotation); the status text sits on the right.
-    private var optionsBar: some View {
-        HStack(spacing: 10) {
-            switch model.tool {
-            case .rect, .ellipse, .line, .arrow, .pen, .highlighter, .number:
-                colorControls
-                HStack { Text("粗细").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
-            case .mosaic, .blur:
-                HStack { Text("强度").font(.caption); Slider(value: $model.lineWidth, in: 1...16).frame(width: 110) }
-            case .text:
-                colorControls
-                Menu("字号 \(Int(model.fontSize))") {
-                    ForEach([12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96], id: \.self) { n in
-                        Button("\(n)") { model.fontSize = CGFloat(n) }
-                    }
-                }.fixedSize()
-                Stepper("", value: $model.fontSize, in: 8...200, step: 2).labelsHidden()
-            case .select, .crop:
-                ColorPicker("选区框颜色", selection: $settings.selectionColor)
-            case .hand:
-                Text("未选工具：拖动画面可平移，捏合可缩放").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            zoomMenu
-        }
-        .controlSize(.small)
-        .padding(.horizontal, 10).padding(.vertical, 5)
-    }
-
-    private var zoomMenu: some View {
-        HStack(spacing: 4) {
-            ForEach([50, 100, 150], id: \.self) { p in
-                Button("\(p)%") { model.canvas?.setZoomPercent(p) }
-                    .buttonStyle(.bordered).tint(model.zoomPercent == p ? .accentColor : nil)
-            }
-            zoomPicker
-        }
-    }
-
-    private var zoomPicker: some View {
-        Menu("\(model.zoomPercent)%") {
-            ForEach([25, 50, 100, 200, 400, 800], id: \.self) { p in Button("\(p)%") { model.canvas?.setZoomPercent(p) } }
-            Divider()
-            Button("适应窗口") { model.canvas?.zoomToFit() }
-        }
-        .fixedSize().help("缩放（触控板捏合；⌘+ ⌘- ⌘0）")
-    }
-
-    /// Colour well, eyedropper and the ten most recently used colours.
-    private var colorControls: some View {
-        HStack(spacing: 6) {
-            ColorPicker("", selection: $model.colorValue).labelsHidden()
-            Button { pickScreenColor() } label: { Image(systemName: "eyedropper") }.help("吸取屏幕上的颜色")
+            } else { Text(model.tool.hint).lineLimit(1).truncationMode(.tail) }
             HStack(spacing: 3) {
-                ForEach(Array(settings.recentColors.enumerated()), id: \.offset) { _, c in
-                    Button { model.colorValue = Color(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a) } label: {
-                        Circle().fill(Color(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a)).frame(width: 16, height: 16)
-                            .overlay(Circle().stroke(.gray.opacity(0.5), lineWidth: 0.5))
-                    }.buttonStyle(.plain).help("最近使用的颜色")
+                ForEach([50, 100, 150], id: \.self) { value in
+                    Button { model.canvas?.setZoomPercent(value) } label: {
+                        Text("\(value)%").monospacedDigit().padding(.horizontal, 5).padding(.vertical, 3)
+                            .foregroundStyle(model.zoomPercent == value ? EditorStyle.accent : Color.secondary)
+                            .background(model.zoomPercent == value ? EditorStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                    }.buttonStyle(.plain).help("缩放到 \(value)%")
                 }
-            }
-        }
-    }
-
-    private func pickScreenColor() {
-        NSColorSampler().show { picked in
-            guard let picked, let c = picked.usingColorSpace(.sRGB) else { return }
-            model.colorValue = Color(.sRGB, red: Double(c.redComponent), green: Double(c.greenComponent), blue: Double(c.blueComponent), opacity: 1)
-            AppSettings.shared.noteUsed(RGBA(Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)))
-        }
-    }
-
-    /// Sends a browsed picture to the editor as a new 截图 entry; the original file is never touched.
-    private func editFromBrowse(_ image: CGImage) {
-        guard let entry = model.history.add(image, format: settings.imageFormat, namePrefix: "图片") else { return }
-        model.entries = model.history.entries
-        model.open(entry)
-        tab = .shots
+            }.padding(.leading, 8)
+        }.font(.system(size: 10)).foregroundStyle(.secondary)
+            .controlSize(.mini).padding(.horizontal, 16).frame(height: EditorStyle.footerHeight).background(.bar)
     }
 
     private var historyPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(SideTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().padding(8)
-            Divider()
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(SideTab.allCases, id: \.self) { item in
+                    Button { tab = item } label: {
+                        Text(item.rawValue).font(.system(size: 12, weight: tab == item ? .medium : .regular))
+                            .foregroundStyle(tab == item ? Color.primary.opacity(0.82) : .secondary)
+                            .frame(maxWidth: .infinity).frame(height: 36)
+                            .background(tab == item ? EditorStyle.well : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .shadow(color: .black.opacity(tab == item ? 0.12 : 0), radius: 1.5, y: 1)
+                    }.buttonStyle(.plain).accessibilityLabel(item.rawValue).accessibilityAddTraits(tab == item ? .isSelected : [])
+                }
+            }.padding(2).background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                .padding(.horizontal, 14).frame(height: 46).padding(.bottom, 12)
             switch tab {
-            case .shots:
-                Button { model.newBlank() } label: {
-                    Label("新建", systemImage: "plus.square").font(.title3).frame(maxWidth: .infinity, minHeight: 84)
-                }
-                .buttonStyle(.bordered).padding(.horizontal, 8).padding(.top, 8)
-                    .help("新建一块空白画板（尺寸见设置）")
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(model.entries) { entry in
-                            HistoryThumb(model: model, entry: entry)
-                        }
-                    }
-                    .padding(8)
-                }
-            case .browse:
-                BrowseSidebar(model: browse)
+            case .shots: captureActions; searchField; historyList
+            case .browse: BrowseSidebar(model: browse)
             }
+            Divider()
+            HStack {
+                Text(tab == .shots ? "\(model.entries.count) 张截图" : "\(browse.groups.count) 个分组").font(.system(size: 10)).foregroundStyle(.secondary)
+                Spacer()
+                Button { SettingsWindow.show() } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("设置 ⌘,").accessibilityLabel("设置")
+            }.padding(.horizontal, 16).frame(height: EditorStyle.footerHeight)
+        }.frame(width: EditorStyle.sidebarWidth).background(EditorMaterial().overlay(EditorStyle.sidebar.opacity(0.88)))
+    }
+    private var captureActions: some View {
+        Button { model.newBlank() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 16))
+                Text("新建画板").font(.system(size: 13, weight: .medium))
+            }.frame(maxWidth: .infinity).frame(height: 42).contentShape(Rectangle())
+        }.buttonStyle(.plain).help("新建一块空白画板（尺寸见设置）")
+            .background(.background.opacity(0.75), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(EditorStyle.separator, lineWidth: 0.5)).padding(.horizontal, 14)
+    }
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+            TextField("搜索截图", text: $query).textFieldStyle(.plain).font(.system(size: 12))
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                    .buttonStyle(.plain).accessibilityLabel("清除搜索")
+            }
+        }.padding(.horizontal, 8).frame(height: 29)
+            .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 4)
+    }
+    private var filteredEntries: [HistoryEntry] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return model.entries.filter { text.isEmpty || "\($0.displayName) \($0.shortName) \($0.date.formatted()) \($0.width)×\($0.height)".localizedStandardContains(text) }
+    }
+    private var days: [Date] { Array(Set(filteredEntries.map { Calendar.current.startOfDay(for: $0.date) })).sorted(by: >) }
+    private func groupTitle(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) { return "今天" }
+        if Calendar.current.isDateInYesterday(date) { return "昨天" }
+        return date.formatted(.dateTime.month().day())
+    }
+    private var historyList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 5) {
+                    if filteredEntries.isEmpty {
+                        VStack(spacing: 9) {
+                            Image(systemName: query.isEmpty ? "photo.on.rectangle" : "magnifyingglass").font(.system(size: 25, weight: .light))
+                            Text(query.isEmpty ? "截图会保存在这里" : "没有匹配的截图").font(.system(size: 12))
+                        }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 36)
+                    }
+                    ForEach(days, id: \.self) { day in
+                        let entries = filteredEntries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+                        HStack {
+                            Text(groupTitle(day)).fontWeight(.semibold); Spacer(); Text("\(entries.count) 张")
+                        }.font(.system(size: 11)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 11).padding(.top, 15).padding(.bottom, 4)
+                        ForEach(entries) { entry in HistoryThumb(model: model, entry: entry).id(entry.id) }
+                    }
+                }.padding(.horizontal, 9).padding(.bottom, 12)
+            }.onChange(of: model.currentID) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
         }
-        .frame(width: 200)
+    }
+    private func editFromBrowse(_ image: CGImage) {
+        guard let entry = model.history.add(image, format: settings.imageFormat, namePrefix: "图片") else { return }
+        model.entries = model.history.entries; model.open(entry); tab = .shots
     }
 }
 
 private struct HistoryThumb: View {
     @ObservedObject var model: EditorModel
     let entry: HistoryEntry
-
+    @State private var hovering = false
+    private var selected: Bool { entry.id == model.currentID }
     var body: some View {
-        let thumb = model.history.thumbnail(for: entry.id)
-        VStack(spacing: 2) {
-            if let thumb {
-                Image(decorative: thumb, scale: 2).resizable().scaledToFit().frame(maxHeight: 100)
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(entry.id == model.currentID ? Color.accentColor : .gray.opacity(0.3), lineWidth: entry.id == model.currentID ? 2 : 1))
+        Button { model.open(entry) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    Rectangle().fill(.white)
+                    if let thumb = model.history.thumbnail(for: entry.id, maxPixel: 400) {
+                        Image(decorative: thumb, scale: 1).resizable().scaledToFit()
+                    } else { Image(systemName: "photo").foregroundStyle(.tertiary) }
+                }.frame(height: 104).clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? EditorStyle.accent : EditorStyle.separator, lineWidth: selected ? 1.5 : 0.5))
+                    .shadow(color: .black.opacity(0.07), radius: 2, y: 1)
+                HStack(spacing: 4) {
+                    Text(entry.shortName).font(.system(size: 12, weight: .medium)).lineLimit(1); Spacer(minLength: 0)
+                    Text(entry.date, format: .dateTime.hour().minute()).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
+                }.foregroundStyle(selected ? EditorStyle.accent : Color.primary.opacity(0.7))
+                if selected { Text("\(entry.width) × \(entry.height) · \(entry.formatLabel)").font(.system(size: 10)).foregroundStyle(.secondary) }
+            }.padding(9).contentShape(RoundedRectangle(cornerRadius: 8))
+                .background(selected ? EditorStyle.accent.opacity(0.12) : Color.primary.opacity(hovering ? 0.04 : 0), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? EditorStyle.accent.opacity(0.12) : .clear, lineWidth: 1))
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel("\(entry.shortName)，\(entry.date.formatted())").accessibilityAddTraits(selected ? .isSelected : [])
+            .help(entry.displayName).contextMenu {
+                Button("删除", role: .destructive) { model.deleteEntry(entry) }
             }
-            Text(entry.date, format: .dateTime.month().day().hour().minute().second()).font(.caption2).foregroundStyle(.secondary)
-        }
-        .onTapGesture { model.open(entry) }
-        .contextMenu { Button("删除", role: .destructive) { model.deleteEntry(entry) } }
     }
 }

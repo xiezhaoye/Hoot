@@ -1,3 +1,11 @@
 .build/
 *.app
 .DS_Store
+
+# Generated site and release artifacts
+landing/dist/
+.wrangler/
+releases/
+.env
+.env.*
+!.env.example

@@ -50,11 +50,23 @@ public extension Annotation {
         let t = lineWidth / 2 + slop
         switch kind {
         case .rect(let r):
+            if cornerRadius > 0 {
+                let outer = r.insetBy(dx: -t, dy: -t)
+                let radius = min(cornerRadius, min(r.width, r.height) / 2)
+                let outerPath = CGPath(roundedRect: outer, cornerWidth: radius + t, cornerHeight: radius + t, transform: nil)
+                guard outerPath.contains(p) else { return false }
+                if fill != .none { return true }
+                let inner = r.insetBy(dx: t, dy: t)
+                if inner.width <= 0 || inner.height <= 0 { return true }
+                return !CGPath(roundedRect: inner, cornerWidth: max(0, radius - t), cornerHeight: max(0, radius - t), transform: nil).contains(p)
+            }
+            if fill != .none { return r.insetBy(dx: -t, dy: -t).contains(p) }
             return r.insetBy(dx: -t, dy: -t).contains(p) && !r.insetBy(dx: t, dy: t).contains(p)
         case .ellipse(let r):
             guard r.width > 0, r.height > 0 else { return false }
             let a = r.width / 2, b = r.height / 2
             let n = sqrt(pow((p.x - r.midX) / a, 2) + pow((p.y - r.midY) / b, 2))
+            if fill != .none { return n <= 1 + t / min(a, b) }
             return abs(n - 1) * min(a, b) <= t
         case .line(let a, let b), .arrow(let a, let b):
             return Self.distance(from: p, toSegment: a, b) <= t
@@ -77,6 +89,35 @@ public extension Annotation {
         case .number(let n, let c, let dia): kind = .number(n, center: sh(c), diameter: dia)
         default: break
         }
+    }
+
+    /// Inspector edits are independent of the existing mouse-handle resizing rules.
+    func settingFrame(_ requested: CGRect) -> Annotation {
+        guard let old = bounds, requested.origin.x.isFinite, requested.origin.y.isFinite,
+              requested.width.isFinite, requested.height.isFinite else { return self }
+        let minimum: CGFloat
+        switch kind { case .line, .arrow: minimum = lineWidth; default: minimum = lineWidth + 1 }
+        let frame = CGRect(x: requested.minX, y: requested.minY,
+                           width: max(minimum, requested.width), height: max(minimum, requested.height))
+        var result = self
+        switch kind {
+        case .rect: result.kind = .rect(frame.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+        case .ellipse: result.kind = .ellipse(frame.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+        case .line(let p, let q), .arrow(let p, let q):
+            let inner = frame.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+            let start = CGPoint(x: p.x > q.x ? inner.maxX : inner.minX, y: p.y > q.y ? inner.maxY : inner.minY)
+            let end = CGPoint(x: q.x >= p.x ? inner.maxX : inner.minX, y: q.y >= p.y ? inner.maxY : inner.minY)
+            if case .line = kind { result.kind = .line(start, end) } else { result.kind = .arrow(start, end) }
+        case .text(let text, _, let size):
+            let font = max(8, size * frame.height / max(1, old.height))
+            if abs(frame.width - old.width) > 0.001 { result.boxWidth = frame.width }
+            result.kind = .text(text, origin: frame.origin, fontSize: font)
+        case .number(let number, _, _):
+            let diameter = max(12, min(frame.width, frame.height))
+            result.kind = .number(number, center: CGPoint(x: frame.minX + diameter / 2, y: frame.minY + diameter / 2), diameter: diameter)
+        default: break
+        }
+        return result
     }
 
     /// Returns `self` (the state at drag start) reshaped by dragging `handle` to `point`.

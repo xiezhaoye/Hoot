@@ -1,0 +1,7 @@
+{
+  "name": "hoot-site",
+  "compatibility_date": "2026-10-25",
+  "assets": { "directory": "./dist", "not_found_handling": "404-page" },
+  "routes": [{ "pattern": "hoot.xiezhaoye.site", "custom_domain": true }],
+  "workers_dev": false
+}

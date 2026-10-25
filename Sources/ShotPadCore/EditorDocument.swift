@@ -77,6 +77,14 @@ public final class EditorDocument {
         state.annotations.removeAll { $0.id == id }
     }
 
+    public func reorderAnnotation(_ id: UUID, toFront: Bool) {
+        guard let index = state.annotations.firstIndex(where: { $0.id == id }),
+              index != (toFront ? state.annotations.count - 1 : 0) else { return }
+        record()
+        let annotation = state.annotations.remove(at: index)
+        state.annotations.insert(annotation, at: toFront ? state.annotations.count : 0)
+    }
+
     /// Blanks `rect` to white (baking annotations into the pixels first).
     public func erase(_ rect: CGRect) {
         commitPatch()

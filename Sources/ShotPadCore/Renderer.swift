@@ -51,11 +51,18 @@ public enum Renderer {
         ctx.setLineWidth(a.lineWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
+        if a.opacity != 1 { ctx.setAlpha(CGFloat(max(0, min(1, a.opacity)))) }
+        if a.shadow { ctx.setShadow(offset: CGSize(width: 0, height: 3), blur: 5, color: CGColor(gray: 0, alpha: 0.2)) }
         switch a.kind {
         case .rect(let r):
-            ctx.stroke(r)
+            if a.fill == .none && a.cornerRadius <= 0 { ctx.stroke(r) }
+            else {
+                let radius = min(max(0, a.cornerRadius), min(r.width, r.height) / 2)
+                drawShape(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil), annotation: a, in: ctx)
+            }
         case .ellipse(let r):
-            ctx.strokeEllipse(in: r)
+            if a.fill == .none { ctx.strokeEllipse(in: r) }
+            else { drawShape(CGPath(ellipseIn: r, transform: nil), annotation: a, in: ctx) }
         case .line(let p, let q):
             ctx.move(to: p); ctx.addLine(to: q); ctx.strokePath()
         case .arrow(let p, let q):
@@ -92,6 +99,16 @@ public enum Renderer {
             let sz = NSAttributedString(string: s, attributes: [.font: font]).size()
             drawText(ctx, s, at: CGPoint(x: r.minX + 1, y: r.midY - sz.height / 2), font: font, color: a.color)
         }
+    }
+
+    private static func drawShape(_ path: CGPath, annotation: Annotation, in ctx: CGContext) {
+        if annotation.fill != .none {
+            let c = annotation.color
+            ctx.setFillColor(CGColor(srgbRed: c.r, green: c.g, blue: c.b,
+                                    alpha: c.a * (annotation.fill == .translucent ? 0.15 : 1)))
+        }
+        ctx.addPath(path)
+        ctx.drawPath(using: annotation.fill == .none ? .stroke : .fillStroke)
     }
 
     private static func stroke(_ ctx: CGContext, _ pts: [CGPoint]) {

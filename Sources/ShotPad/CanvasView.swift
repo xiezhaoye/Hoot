@@ -6,7 +6,10 @@ import ShotPadCore
 /// Image pixels map to view points through `zoom` (points per pixel).
 final class CanvasView: NSView, NSTextFieldDelegate {
     /// The grey area around the white board.
-    static let surround = NSColor(white: 0.80, alpha: 1)
+    static let surround = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 0.14, alpha: 1) : NSColor(srgbRed: 0.90, green: 0.91, blue: 0.93, alpha: 1)
+    }
 
     weak var model: EditorModel?
     private(set) var zoom: CGFloat = 0.5
@@ -17,8 +20,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var dragStart: CGPoint?
     private var draftPoints: [CGPoint] = []
     private var draftRect: CGRect?
-    private var selection: CGRect?
-    private var cropRect: CGRect?
+    private var selection: CGRect? { didSet { model?.documentChanged() } }
+    private var cropRect: CGRect? { didSet { model?.documentChanged() } }
     private enum PatchDrag { case move(grab: CGPoint, origin: CGRect), resize(Handle, CGRect) }
     private var patchDrag: PatchDrag?
     private var textField: NSTextField?
@@ -29,7 +32,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var editDrag: EditDrag?
     private let textPad: CGFloat = 4
     private var editingText: Annotation?          // existing text being re-typed
-    private var selectedID: UUID?
+    private var selectedID: UUID? { didSet { if oldValue != selectedID { model?.documentChanged() } } }
     private struct AnnotationDrag {
         var handle: AnnotationHandle?
         var original: Annotation
@@ -46,6 +49,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var hoverPoint: CGPoint?
     private var confirmButton: NSButton?
     private var lastHadPatch = false
+    private var lastPatchRect: CGRect?
 
     private var selectionColor: NSColor { AppSettings.shared.selectionNSColor }
 
@@ -64,7 +68,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     /// The selected annotation, only while the matching tool is active.
-    private var selectedAnnotation: Annotation? {
+    var selectedAnnotation: Annotation? {
         guard let id = selectedID, let tool = model?.tool, let a = doc?.annotation(id), matches(a, tool) else { return nil }
         return a
     }
@@ -88,6 +92,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     /// Changes the zoom keeping the image point under `anchor` (view coordinates) where it is on screen.
     func setZoom(_ newZoom: CGFloat, anchor: CGPoint? = nil) {
         guard doc != nil, let clip = enclosingScrollView?.contentView else { return }
+        model?.zoomFitted = false
         commitText()
         let z = min(max(newZoom, 0.05 / backing), 8 / backing)
         guard abs(z - zoom) > 1e-6 else { return }
@@ -113,6 +118,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         setZoom(min(w, h, 1 / backing))
         clip.scroll(to: NSPoint(x: inset - 12, y: inset - 12))
         enclosingScrollView?.reflectScrolledClipView(clip)
+        model?.zoomFitted = true
     }
 
     override func magnify(with event: NSEvent) {
@@ -141,6 +147,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if !keepView {
             zoom = 1 / backing
             model?.zoomPercent = 100
+            model?.zoomFitted = false
         }
         refresh()
         if resetScroll, let clip = enclosingScrollView?.contentView {
@@ -186,7 +193,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         let imageRect = viewRect(doc.bounds)
         if let cache {
             ctx.saveGState()
-            ctx.setShadow(offset: .zero, blur: 6, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 10, color: NSColor.black.withAlphaComponent(0.16).cgColor)
             NSColor.white.setFill()
             imageRect.fill()      // white under the picture, so transparent pixels read as white paper
             ctx.interpolationQuality = zoom < 1 ? .high : .none
@@ -226,13 +233,13 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             ctx.translateBy(x: inset, y: inset)
             ctx.scaleBy(x: zoom, y: zoom)
             switch tool {
-            case .pen: Renderer.draw(Annotation(.pen(draftPoints), color: m.color.rgba, lineWidth: m.lineWidth), in: ctx)
-            case .highlighter: Renderer.draw(Annotation(.highlighter(draftPoints), color: m.color.rgba, lineWidth: m.lineWidth), in: ctx)
+            case .pen: Renderer.draw(m.applyAppearance(to: Annotation(.pen(draftPoints), color: m.color.rgba, lineWidth: m.lineWidth)), in: ctx)
+            case .highlighter: Renderer.draw(m.applyAppearance(to: Annotation(.highlighter(draftPoints), color: m.color.rgba, lineWidth: m.lineWidth)), in: ctx)
             case .rect, .ellipse, .line, .arrow:
                 if let s = dragStart, let e = draftPoints.last {
                     let kind: Annotation.Kind = tool == .rect ? .rect(.spanning(s, e)) : tool == .ellipse ? .ellipse(.spanning(s, e))
                         : tool == .line ? .line(s, e) : .arrow(s, e)
-                    Renderer.draw(Annotation(kind, color: m.color.rgba, lineWidth: m.lineWidth), in: ctx)
+                    Renderer.draw(m.applyAppearance(to: Annotation(kind, color: m.color.rgba, lineWidth: m.lineWidth)), in: ctx)
                 }
             default: break
             }
@@ -272,8 +279,13 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     /// Keeps the confirm button and the toolbar in step with the floating block.
     private func syncPatchUI() {
-        let has = doc?.patch != nil
-        if has != lastHadPatch { lastHadPatch = has; model?.documentChanged() }
+        let patchRect = doc?.patch?.rect
+        let has = patchRect != nil
+        if has != lastHadPatch || patchRect != lastPatchRect {
+            lastHadPatch = has
+            lastPatchRect = patchRect
+            model?.documentChanged()
+        }
         guard let patch = doc?.patch else { confirmButton?.removeFromSuperview(); confirmButton = nil; return }
         let b: NSButton
         if let existing = confirmButton { b = existing } else {
@@ -472,7 +484,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             needsDisplay = true
             return
         }
-        draftPoints.append(p)
+        let endpoint = event.modifierFlags.contains(.shift) && (model.tool == .rect || model.tool == .ellipse)
+            ? DrawingGeometry.squareEndpoint(from: s, to: p) : p
+        draftPoints.append(endpoint)
         let r = CGRect.spanning(s, p).clamped(to: doc.bounds)
         switch model.tool {
         case .select: selection = r
@@ -495,7 +509,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         defer { dragStart = nil; patchDrag = nil; annDrag = nil; editDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
         if annDrag != nil || editDrag != nil { return }
         if patchDrag != nil { return }
-        let e = imagePoint(event)
+        let point = imagePoint(event)
+        let e = event.modifierFlags.contains(.shift) && (model.tool == .rect || model.tool == .ellipse)
+            ? DrawingGeometry.squareEndpoint(from: s, to: point) : point
         let r = CGRect.spanning(s, e).clamped(to: doc.bounds)
         let big = abs(e.x - s.x) >= 3 || abs(e.y - s.y) >= 3
         let color = model.color.rgba, w = model.lineWidth
@@ -506,8 +522,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .ellipse where big: addAndSelect(Annotation(.ellipse(.spanning(s, e)), color: color, lineWidth: w))
         case .line where big: addAndSelect(Annotation(.line(s, e), color: color, lineWidth: w))
         case .arrow where big: addAndSelect(Annotation(.arrow(s, e), color: color, lineWidth: w))
-        case .pen: AppSettings.shared.noteUsed(color); doc.add(Annotation(.pen(draftPoints + [e]), color: color, lineWidth: w)); refresh()
-        case .highlighter: AppSettings.shared.noteUsed(color); doc.add(Annotation(.highlighter(draftPoints + [e]), color: color, lineWidth: w)); refresh()
+        case .pen: AppSettings.shared.noteUsed(color); doc.add(model.applyAppearance(to: Annotation(.pen(draftPoints + [e]), color: color, lineWidth: w))); refresh()
+        case .highlighter: AppSettings.shared.noteUsed(color); doc.add(model.applyAppearance(to: Annotation(.highlighter(draftPoints + [e]), color: color, lineWidth: w))); refresh()
         case .mosaic where big: doc.add(Annotation(.mosaic(r, block: max(6, Int(w) * 3)))); refresh()
         case .blur where big: doc.add(Annotation(.blur(r, radius: max(4, Double(w) * 3)))); refresh()
         default: break
@@ -517,6 +533,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Text tool
 
     private func addAndSelect(_ a: Annotation) {
+        let a = model?.applyAppearance(to: a) ?? a
         AppSettings.shared.noteUsed(a.color)
         doc?.add(a)
         selectedID = a.id
@@ -627,7 +644,10 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Keyboard
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard textField == nil, event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+        // Let the new search field (and native text inputs) handle their own editing shortcuts.
+        // Toolbar focus must still allow the existing canvas shortcuts to work.
+        guard !(window?.firstResponder is NSTextView), !(window?.firstResponder is NSTextField), textField == nil,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
               let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         switch key {
         case "x": cutSelection(); return true
@@ -671,6 +691,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Edit commands
 
     var selectionRect: CGRect? { selection }
+    var activeSelectionRect: CGRect? { model?.tool == .crop ? cropRect : selection }
 
     func copySelection() {
         guard let doc else { return }
@@ -719,7 +740,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     // MARK: Styling the selected annotation
 
-    enum StyleChange { case color, width, font }
+    enum StyleChange { case color, width, font, appearance }
 
     /// Tool settings changed: apply to the selected annotation too.
     func styleChanged(_ change: StyleChange) {
@@ -734,6 +755,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .font:
             guard case .text(let s, let o, _) = a.kind else { return }
             a.kind = .text(s, origin: o, fontSize: m.fontSize)
+        case .appearance: a = m.applyAppearance(to: a)
         }
         doc.replaceAnnotation(a, record: styleRecordedID != a.id)
         styleRecordedID = a.id
@@ -744,6 +766,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         guard let m = model else { return }
         suppressStyle = true
         m.colorValue = Color(.sRGB, red: a.color.r, green: a.color.g, blue: a.color.b, opacity: a.color.a)
+        m.fill = a.fill; m.opacity = a.opacity; m.cornerRadius = a.cornerRadius; m.shadow = a.shadow
         switch a.kind {
         case .text(_, _, let fs): m.fontSize = fs
         case .number: break
@@ -751,7 +774,25 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         }
         suppressStyle = false
         styleRecordedID = nil
+        m.documentChanged()
     }
+
+    func setSelectedFrame(_ frame: CGRect) {
+        guard let annotation = selectedAnnotation else { return }
+        let updated = annotation.settingFrame(frame)
+        doc?.replaceAnnotation(updated, record: true)
+        styleRecordedID = nil
+        refresh()
+        loadStyle(from: updated)
+    }
+
+    func reorderSelected(toFront: Bool) {
+        guard let annotation = selectedAnnotation else { return }
+        doc?.reorderAnnotation(annotation.id, toFront: toFront)
+        styleRecordedID = nil
+        refresh()
+    }
+
     func cancelPatch() { doc?.cancelPatch(); needsDisplay = true }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: model?.tool == .hand ? .openHand : .crosshair) }

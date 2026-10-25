@@ -38,6 +38,12 @@ public struct Annotation: Identifiable {
     public var lineWidth: CGFloat
     /// Wrap width for `.text`; nil means one unwrapped line.
     public var boxWidth: CGFloat?
+    /// Optional appearance controls. Defaults preserve the original renderer exactly.
+    public enum Fill: String, CaseIterable { case none, translucent, solid }
+    public var fill: Fill = .none
+    public var opacity: Double = 1
+    public var cornerRadius: CGFloat = 0
+    public var shadow = false
 
     public init(_ kind: Kind, color: RGBA = .red, lineWidth: CGFloat = 3) {
         self.kind = kind

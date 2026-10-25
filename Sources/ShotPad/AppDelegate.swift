@@ -13,15 +13,24 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         model = EditorModel(image: image, history: history, entry: entry)
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let visible = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1400, height: 900)
-        let w = min(CGFloat(image.width) / scale + 170, visible.width * 0.9)
-        let h = min(CGFloat(image.height) / scale + 110, visible.height * 0.9)
-        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: max(w, 900), height: max(h, 520)),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let w = min(max(CGFloat(image.width) / scale + 480, 1240), visible.width * 0.92)
+        let h = min(max(CGFloat(image.height) / scale + 130, 800), visible.height * 0.92)
+        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: w, height: h),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init()
         window.title = "Hoot"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        let titlebarSpace = NSTitlebarAccessoryViewController()
+        titlebarSpace.layoutAttribute = .bottom
+        titlebarSpace.view = NSView(frame: CGRect(x: 0, y: 0, width: 1, height: 42))
+        window.addTitlebarAccessoryViewController(titlebarSpace)
+        window.minSize = CGSize(width: 980, height: 600)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: EditorView(model: model))
+        let hosting = NSHostingView(rootView: EditorView(model: model))
+        hosting.safeAreaRegions = []
+        window.contentView = hosting
         window.center()
     }
 

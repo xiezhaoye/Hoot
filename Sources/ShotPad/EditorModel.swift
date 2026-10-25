@@ -11,11 +11,19 @@ final class EditorModel: ObservableObject {
     @Published var doc: EditorDocument
     @Published var tool: Tool = .hand            // .hand = no tool picked: drag to pan
     @Published var zoomPercent = 100
+    @Published var zoomFitted = false
     @Published var colorValue: Color = AppSettings.shared.annotationColor {
         didSet { AppSettings.shared.annotationColor = colorValue; canvas?.styleChanged(.color) }
     }
     @Published var lineWidth: CGFloat = 3 { didSet { canvas?.styleChanged(.width) } }
     @Published var fontSize: CGFloat = 28 { didSet { canvas?.styleChanged(.font) } }
+    @Published var fill: Annotation.Fill = .none { didSet { canvas?.styleChanged(.appearance) } }
+    @Published var opacity: Double = 1 { didSet { canvas?.styleChanged(.appearance) } }
+    @Published var cornerRadius: CGFloat = 0 { didSet { canvas?.styleChanged(.appearance) } }
+    @Published var shadow = false { didSet { canvas?.styleChanged(.appearance) } }
+    @Published var aspectLocked = false
+    @Published var sidebarVisible = true
+    @Published var inspectorVisible = true
     @Published var status = ""
     @Published var entries: [HistoryEntry] = []
     @Published var currentID: UUID?
@@ -38,6 +46,42 @@ final class EditorModel: ObservableObject {
     func documentChanged() { revision += 1 }
 
     var hasPatch: Bool { revision >= 0 && doc.patch != nil }
+
+    var currentEntry: HistoryEntry? { entries.first { $0.id == currentID } }
+    var documentTitle: String { currentEntry?.shortName ?? "未命名画板" }
+    var selectedAnnotation: Annotation? { revision >= 0 ? canvas?.selectedAnnotation : nil }
+    var selectionFrame: CGRect? { doc.patch?.rect ?? selectedAnnotation?.bounds ?? canvas?.activeSelectionRect }
+    var canEditFrame: Bool { selectedAnnotation != nil || hasPatch }
+
+    func applyAppearance(to annotation: Annotation) -> Annotation {
+        var result = annotation
+        result.fill = fill; result.opacity = opacity; result.cornerRadius = cornerRadius; result.shadow = shadow
+        return result
+    }
+
+    func updateFrame(_ value: CGFloat, keyPath: WritableKeyPath<CGRect, CGFloat>) {
+        guard value.isFinite, var frame = selectionFrame, canEditFrame else { return }
+        var locked = aspectLocked
+        if !hasPatch, let annotation = selectedAnnotation, case .number = annotation.kind { locked = true }
+        if keyPath == \.size.width {
+            let width = max(1, value)
+            if locked { frame.size.height *= width / max(1, frame.width) }
+            frame.size.width = width
+        } else if keyPath == \.size.height {
+            let height = max(1, value)
+            if locked { frame.size.width *= height / max(1, frame.height) }
+            frame.size.height = height
+        } else { frame[keyPath: keyPath] = value }
+        if hasPatch { doc.setPatchRect(frame); canvas?.needsDisplay = true }
+        else { canvas?.setSelectedFrame(frame) }
+    }
+
+    func chooseTool(_ next: Tool) {
+        canvas?.finishTextEditing()
+        tool = tool == next && next != .hand ? .hand : next
+        canvas?.needsDisplay = true
+        if let canvas { canvas.window?.invalidateCursorRects(for: canvas); canvas.window?.makeFirstResponder(canvas) }
+    }
 
     // MARK: History
 
@@ -105,6 +149,20 @@ final class EditorModel: ObservableObject {
     func runOCR() { TextTools.showOCR(recognitionTarget()) }
 
     func translate() { TextTools.showTranslation(recognitionTarget(), toChinese: targetChinese) }
+}
+
+extension HistoryEntry {
+    var displayName: String {
+        guard let fileName else { return "截图" }
+        return (fileName as NSString).deletingPathExtension
+    }
+    var shortName: String {
+        if displayName.hasPrefix("截图 ") { return "截图" }
+        if displayName.hasPrefix("画板 ") { return "空白画板" }
+        if displayName.hasPrefix("图片 ") { return "导入图片" }
+        return displayName.replacingOccurrences(of: " \\d{4}-\\d{2}-\\d{2} \\d{2}\\.\\d{2}\\.\\d{2}( \\d+)?$", with: "", options: .regularExpression)
+    }
+    var formatLabel: String { fileName.map { ($0 as NSString).pathExtension.uppercased() } ?? "PNG" }
 }
 
 struct RGBAWrapper {

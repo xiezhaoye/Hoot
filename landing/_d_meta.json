@@ -1,0 +1,18 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Hoot 产品落地页": {
+      "versions": [
+        {
+          "path": "index.html",
+          "createdAt": "2026-10-25T14:02:11.892Z",
+          "status": "needs-review"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-10-25T14:02:11.892Z",
+  "updatedAt": "2026-10-25T14:02:11.892Z"
+}

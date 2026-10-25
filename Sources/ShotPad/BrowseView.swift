@@ -156,17 +156,17 @@ struct BrowseSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(model.groups) { group in groupRow(group) }
                     if model.groups.isEmpty {
                         Text("点下方“新建分组”，再往分组里添加文件夹").font(.caption).foregroundStyle(.secondary).padding(10)
                     }
                 }
-                .padding(6)
+                .padding(.horizontal, 10).padding(.vertical, 8)
             }
             Divider()
             Button { model.addGroup() } label: { Label("新建分组", systemImage: "plus") }
-                .buttonStyle(.borderless).padding(8)
+                .buttonStyle(.borderless).font(.system(size: 13, weight: .medium)).frame(maxWidth: .infinity).frame(height: 42)
         }
         .onChange(of: model.groups.count) { _, _ in expanded.formUnion(model.groups.map(\.id)) }
         .onAppear { expanded.formUnion(model.groups.map(\.id)) }
@@ -174,21 +174,21 @@ struct BrowseSidebar: View {
 
     @ViewBuilder private func groupRow(_ group: BrowseGroup) -> some View {
         let open = expanded.contains(group.id)
-        HStack(spacing: 4) {
+        HStack(spacing: 9) {
             Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2).frame(width: 12)
-            Image(systemName: "square.stack")
+            Image(systemName: "square.stack").font(.system(size: 15))
             if model.renamingGroup == group.id {
                 TextField("分组名", text: $draft).textFieldStyle(.roundedBorder)
                     .onSubmit { model.rename(group.id, to: draft) }
                     .onAppear { draft = group.name }
             } else {
-                Text(group.name).lineLimit(1)
+                Text(group.name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
             }
             Spacer(minLength: 0)
             Button { model.chooseFolders(for: group.id) } label: { Image(systemName: "folder.badge.plus") }
-                .buttonStyle(.borderless).help("添加文件夹")
+                .buttonStyle(.borderless).frame(width: 28, height: 30).help("添加文件夹")
         }
-        .padding(.vertical, 3).padding(.horizontal, 4)
+        .frame(minHeight: 38).padding(.horizontal, 5)
         .contentShape(Rectangle())
         .onTapGesture { if open { expanded.remove(group.id) } else { expanded.insert(group.id) } }
         .dropDestination(for: URL.self) { urls, _ in model.addFolders(urls, to: group.id); expanded.insert(group.id); return true }
@@ -201,13 +201,13 @@ struct BrowseSidebar: View {
         if open {
             ForEach(group.folders) { folder in
                 let missing = !folder.exists
-                HStack(spacing: 4) {
-                    Image(systemName: missing ? "exclamationmark.triangle" : "folder")
-                    Text(folder.name).lineLimit(1)
+                HStack(spacing: 9) {
+                    Image(systemName: missing ? "exclamationmark.triangle" : "folder").font(.system(size: 17)).frame(width: 21)
+                    Text(folder.name).font(.system(size: 14)).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(missing ? .secondary : .primary)
-                .padding(.vertical, 3).padding(.horizontal, 6).padding(.leading, 18)
+                .frame(minHeight: 42).padding(.horizontal, 8).padding(.leading, 17)
                 .background(RoundedRectangle(cornerRadius: 5).fill(model.selectedFolder == folder ? Color.accentColor.opacity(0.25) : .clear))
                 .contentShape(Rectangle())
                 .onTapGesture { model.select(folder) }
@@ -255,7 +255,7 @@ struct BrowseDetail: View {
 
     var body: some View {
         ZStack {
-            KeyCatcher(onKey: handleKey)
+            KeyCatcher(onKey: handleKey).frame(width: 1, height: 1)
             Color.white.allowsHitTesting(false)
             if model.selectedFolder == nil {
                 placeholder("从左侧选一个文件夹开始浏览")
@@ -277,23 +277,30 @@ struct BrowseDetail: View {
 
     private var single: some View {
         VStack(spacing: 0) {
+            GeometryReader { geometry in
             ZStack {
                 if let image {
                     Image(decorative: image, scale: 1).resizable().scaledToFit().padding(12)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
                     ProgressView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onTapGesture(count: 2) { edit() }
+            .overlay {
+                HStack(spacing: 0) {
+                    pagingArea(-1, symbol: "chevron.left")
+                    pagingArea(1, symbol: "chevron.right")
+                }
+            }
+            }
             Divider()
             HStack {
                 Text(model.current?.lastPathComponent ?? "").lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text("\(model.index + 1) / \(model.files.count)").monospacedDigit().foregroundStyle(.secondary)
-                Button("编辑") { edit() }.help("送进编辑器，结果另存到“截图”，不改原文件（回车）")
             }
-            .controlSize(.small).padding(.horizontal, 10).padding(.vertical, 6)
+            .controlSize(.small).padding(.horizontal, 10).frame(height: EditorStyle.footerHeight)
             .background(.bar)
         }
         .task(id: model.current) {
@@ -303,6 +310,25 @@ struct BrowseDetail: View {
             guard !Task.isCancelled else { return }
             image = loaded
         }
+    }
+
+    /// Each half of the preview is a paging target; double-click still opens the editor.
+    private func pagingArea(_ delta: Int, symbol: String) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .overlay(alignment: delta < 0 ? .leading : .trailing) {
+                Image(systemName: symbol).font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(.secondary).frame(width: 42, height: 54)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 18)
+                    .opacity((delta < 0 ? model.index > 0 : model.index < model.files.count - 1) ? 1 : 0.25)
+                    .allowsHitTesting(false)
+            }
+            .onTapGesture(count: 2) { edit() }
+            .onTapGesture { model.page(delta) }
+            .accessibilityElement().accessibilityLabel(delta < 0 ? "上一张" : "下一张")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { model.page(delta) }
     }
 
     // MARK: Grid
