@@ -12,7 +12,7 @@ struct CanvasRepresentable: NSViewRepresentable {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.drawsBackground = true
-        scroll.backgroundColor = .underPageBackgroundColor
+        scroll.backgroundColor = CanvasView.surround
         model.canvas = canvas
         DispatchQueue.main.async { canvas.attach(model) }
         return scroll
@@ -61,6 +61,12 @@ struct EditorView: View {
 
     private var toolbar: some View {
         HStack(spacing: 4) {
+            Button { (NSApp.delegate as? AppDelegate)?.capture() } label: {
+                Image(systemName: "camera.viewfinder").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 30, height: 30).background(Circle().fill(Color.accentColor))
+            }
+            .buttonStyle(.plain).help("截图 \(settings.captureShortcutText)")
+            Divider().frame(height: 18).padding(.horizontal, 4)
             ForEach(toolIcons, id: \.0) { tool, icon, help in
                 let on = model.tool == tool
                 Button {
@@ -183,6 +189,9 @@ struct EditorView: View {
             Divider()
             switch tab {
             case .shots:
+                Button { model.newBlank() } label: { Label("新建", systemImage: "plus.square") }
+                    .buttonStyle(.bordered).padding(.horizontal, 8).padding(.top, 8)
+                    .help("新建一块空白画板（尺寸见设置）")
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(model.entries) { entry in

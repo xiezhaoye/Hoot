@@ -57,6 +57,14 @@ final class EditorModel: ObservableObject {
         status = "已打开历史截图"
     }
 
+    /// A new empty white board of the size set in the settings.
+    func newBlank() {
+        guard let img = Board.blank(size: AppSettings.shared.boardSize), let entry = history.add(img) else { return }
+        entries = history.entries
+        open(entry)
+        status = "已新建空白画板"
+    }
+
     func deleteEntry(_ entry: HistoryEntry) {
         history.remove(entry.id)
         entries = history.entries

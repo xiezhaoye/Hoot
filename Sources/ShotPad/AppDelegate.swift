@@ -40,6 +40,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var captureItem: NSMenuItem?
     private var editors: [EditorWindowController] = []
     private let history = HistoryStore(directory: Settings.historyDirectory, limit: Settings.historyLimit)
 
@@ -47,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Hoot")
         statusItem.menu = makeMenu()
-        HotKey.register(keyCode: 0, modifiers: 4096 | 2048, id: 1) { [weak self] in self?.capture() }   // ⌃⌥A
+        registerCaptureHotKey()
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
         TextTools.warmUp()
@@ -71,6 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ctx.setFillColor(CGColor(gray: 1, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
         return ctx.makeImage()
+    }
+
+    func registerCaptureHotKey() {
+        let s = AppSettings.shared
+        HotKey.register(keyCode: s.captureKeyCode, modifiers: s.captureModifiers, id: 1) { [weak self] in self?.capture() }
+        captureItem?.title = "截图  \(s.captureShortcutText)"
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -110,7 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(item("截图  ⌃⌥A", #selector(captureAction)))
+        let cap = item("截图  \(AppSettings.shared.captureShortcutText)", #selector(captureAction))
+        captureItem = cap
+        menu.addItem(cap)
         menu.addItem(item("钉住剪贴板  ⌃⌥P", #selector(pinAction)))
         menu.addItem(item("打开最近一张", #selector(openLatest)))
         let limits = NSMenuItem(title: "历史保留数量", action: nil, keyEquivalent: "")

@@ -9,9 +9,15 @@ enum Settings {
         set { UserDefaults.standard.set(newValue, forKey: "historyLimit") }
     }
 
-    static var historyDirectory: URL {
+    static var defaultHistoryDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ShotPad/History", isDirectory: true)
+    }
+
+    /// Where screenshots are stored; changing it in the settings takes effect on the next launch.
+    static var historyDirectory: URL {
+        get { UserDefaults.standard.string(forKey: "historyDirectory").map { URL(fileURLWithPath: $0, isDirectory: true) } ?? defaultHistoryDirectory }
+        set { UserDefaults.standard.set(newValue.path, forKey: "historyDirectory") }
     }
 }
 
@@ -47,6 +53,7 @@ enum Clipboard {
 enum HotKey {
     private static var handlers: [UInt32: () -> Void] = [:]
     private static var installed = false
+    private static var refs: [UInt32: EventHotKeyRef] = [:]
 
     static func register(keyCode: Int, modifiers: Int, id: UInt32, handler: @escaping () -> Void) {
         if !installed {
@@ -61,8 +68,10 @@ enum HotKey {
             installed = true
         }
         handlers[id] = handler
+        if let old = refs[id] { UnregisterEventHotKey(old); refs[id] = nil }
         var ref: EventHotKeyRef?
         RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x53504144), id: id),
                             GetApplicationEventTarget(), 0, &ref)
+        refs[id] = ref
     }
 }

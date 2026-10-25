@@ -38,6 +38,15 @@ final class AppSettings: ObservableObject {
     @Published var boardWidth: Int { didSet { d.set(boardWidth, forKey: "boardWidth") } }
     @Published var boardHeight: Int { didSet { d.set(boardHeight, forKey: "boardHeight") } }
     var boardSize: CGSize { CGSize(width: max(boardWidth, 200), height: max(boardHeight, 200)) }
+    /// Capture shortcut: virtual key code, Carbon modifier mask (⌘256 ⇧512 ⌥2048 ⌃4096) and its display label.
+    @Published var captureKeyCode: Int { didSet { d.set(captureKeyCode, forKey: "captureKeyCode"); shortcutChanged() } }
+    @Published var captureModifiers: Int { didSet { d.set(captureModifiers, forKey: "captureModifiers"); shortcutChanged() } }
+    @Published var captureKeyLabel: String { didSet { d.set(captureKeyLabel, forKey: "captureKeyLabel") } }
+    var captureShortcutText: String {
+        (captureModifiers & 4096 != 0 ? "⌃" : "") + (captureModifiers & 2048 != 0 ? "⌥" : "")
+            + (captureModifiers & 512 != 0 ? "⇧" : "") + (captureModifiers & 256 != 0 ? "⌘" : "") + captureKeyLabel
+    }
+    private func shortcutChanged() { (NSApp.delegate as? AppDelegate)?.registerCaptureHotKey() }
     @Published var historySide: HistorySide { didSet { d.set(historySide.rawValue, forKey: "historySide") } }
     @Published var annotationColor: Color { didSet { store(annotationColor, "annotationColor") } }
     @Published var selectionColor: Color { didSet { store(selectionColor, "selectionColor") } }
@@ -58,6 +67,9 @@ final class AppSettings: ObservableObject {
     private init() {
         alwaysInDock = d.object(forKey: "alwaysInDock") as? Bool ?? true
         copyAfterCapture = d.bool(forKey: "copyAfterCapture")
+        captureKeyCode = d.object(forKey: "captureKeyCode") as? Int ?? 0
+        captureModifiers = d.object(forKey: "captureModifiers") as? Int ?? (4096 | 2048)
+        captureKeyLabel = d.string(forKey: "captureKeyLabel") ?? "A"
         boardWidth = d.object(forKey: "boardWidth") as? Int ?? 1920
         boardHeight = d.object(forKey: "boardHeight") as? Int ?? 1080
         historySide = HistorySide(rawValue: d.string(forKey: "historySide") ?? "") ?? .right

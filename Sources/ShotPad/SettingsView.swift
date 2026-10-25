@@ -6,10 +6,37 @@ struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
     @State private var testResult = ""
     @State private var testing = false
+    @State private var historyPath = Settings.historyDirectory.path
+    @State private var directoryNote = ""
+
+    /// Copies the existing screenshots to the chosen folder; Hoot uses it from the next launch.
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "选择"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let old = Settings.historyDirectory
+        guard url.standardizedFileURL != old.standardizedFileURL else { return }
+        let fm = FileManager.default
+        for f in (try? fm.contentsOfDirectory(at: old, includingPropertiesForKeys: nil)) ?? [] {
+            let dest = url.appendingPathComponent(f.lastPathComponent)
+            if !fm.fileExists(atPath: dest.path) { try? fm.copyItem(at: f, to: dest) }
+        }
+        Settings.historyDirectory = url
+        historyPath = url.path
+        directoryNote = "已复制现有截图，重启 Hoot 后生效"
+    }
 
     var body: some View {
         Form {
             Section("截图") {
+                HStack {
+                    Text("截图快捷键")
+                    Spacer()
+                    ShortcutRecorder(settings: settings)
+                }
                 Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
                 HStack {
                     Text("编辑画板大小（像素）")
@@ -19,6 +46,18 @@ struct SettingsView: View {
                     TextField("", value: $settings.boardHeight, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
                 }
                 Text("截图进入编辑时放在这块白色画板的左上角；截图比画板大时画板自动撑大。").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("存储") {
+                HStack {
+                    Text("截图保存目录")
+                    Spacer()
+                    Text(historyPath).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                HStack {
+                    Button("更改…") { chooseDirectory() }
+                    Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([Settings.historyDirectory]) }
+                    if !directoryNote.isEmpty { Text(directoryNote).font(.caption).foregroundStyle(.secondary) }
+                }
             }
             Section("界面") {
                 Toggle("始终在 Dock 显示", isOn: $settings.alwaysInDock)
@@ -43,7 +82,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 520)
+        .frame(width: 480, height: 640)
     }
 
     private func test() {
@@ -80,5 +119,51 @@ enum SettingsWindow {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+
+/// Click, then press the new key combination (at least one of ⌃ ⌥ ⇧ ⌘); Esc cancels.
+struct ShortcutRecorder: View {
+    @ObservedObject var settings: AppSettings
+    @State private var recording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button(recording ? "请按下新的快捷键…" : settings.captureShortcutText) { toggle() }
+            .frame(minWidth: 130)
+            .onDisappear { stop() }
+    }
+
+    private func toggle() { recording ? stop() : start() }
+
+    private func start() {
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            if e.keyCode == 53 { stop(); return nil }
+            let f = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            var mods = 0
+            if f.contains(.control) { mods |= 4096 }
+            if f.contains(.option) { mods |= 2048 }
+            if f.contains(.shift) { mods |= 512 }
+            if f.contains(.command) { mods |= 256 }
+            guard mods != 0 else { NSSound.beep(); return nil }
+            settings.captureKeyLabel = Self.label(for: e)
+            settings.captureKeyCode = Int(e.keyCode)
+            settings.captureModifiers = mods
+            stop()
+            return nil
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+    }
+
+    private static func label(for e: NSEvent) -> String {
+        let special: [UInt16: String] = [36: "↩", 48: "⇥", 49: "空格", 51: "⌫", 123: "←", 124: "→", 125: "↓", 126: "↑",
+                                         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12"]
+        return special[e.keyCode] ?? (e.charactersIgnoringModifiers?.uppercased() ?? "?")
     }
 }

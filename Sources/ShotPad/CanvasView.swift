@@ -5,6 +5,9 @@ import ShotPadCore
 /// Draws the document and turns mouse/keyboard input into edits.
 /// Image pixels map to view points through `zoom` (points per pixel).
 final class CanvasView: NSView, NSTextFieldDelegate {
+    /// The grey area around the white board.
+    static let surround = NSColor(white: 0.80, alpha: 1)
+
     weak var model: EditorModel?
     private(set) var zoom: CGFloat = 0.5
     private var cache: CGImage?
@@ -178,12 +181,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let doc else { return }
-        NSColor.underPageBackgroundColor.setFill()
+        Self.surround.setFill()
         dirtyRect.fill()
         let imageRect = viewRect(doc.bounds)
         if let cache {
             ctx.saveGState()
             ctx.setShadow(offset: .zero, blur: 6, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            NSColor.white.setFill()
+            imageRect.fill()      // white under the picture, so transparent pixels read as white paper
             ctx.interpolationQuality = zoom < 1 ? .high : .none
             Renderer.drawImage(ctx, cache, in: imageRect)
             ctx.restoreGState()
