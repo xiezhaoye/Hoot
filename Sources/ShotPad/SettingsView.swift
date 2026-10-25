@@ -56,7 +56,7 @@ enum SettingsWindow {
     static func show() {
         if window == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            w.title = "ShotPad 设置"
+            w.title = "Hoot 设置"
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView())
             w.center()

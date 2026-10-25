@@ -17,7 +17,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: max(w, 900), height: max(h, 520)),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
-        window.title = "ShotPad 编辑"
+        window.title = "Hoot"
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: EditorView(model: model))
@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "ShotPad")
+        statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Hoot")
         statusItem.menu = makeMenu()
         HotKey.register(keyCode: 0, modifiers: 4096 | 2048, id: 1) { [weak self] in self?.capture() }   // ⌃⌥A
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let prefs = item("设置…", #selector(openSettings)); prefs.keyEquivalent = ","
         app.addItem(prefs)
         app.addItem(.separator())
-        let quit = item("退出 ShotPad", #selector(NSApplication.terminate(_:)), target: NSApp); quit.keyEquivalent = "q"
+        let quit = item("退出 Hoot", #selector(NSApplication.terminate(_:)), target: NSApp); quit.keyEquivalent = "q"
         app.addItem(quit)
         appItem.submenu = app
         let editItem = NSMenuItem(); main.addItem(editItem)
@@ -194,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CGRequestScreenCaptureAccess()
             let alert = NSAlert()
             alert.messageText = "需要屏幕录制权限"
-            alert.informativeText = "请在 系统设置 → 隐私与安全性 → 屏幕录制 中允许 ShotPad，然后重新启动应用。"
+            alert.informativeText = "请在 系统设置 → 隐私与安全性 → 屏幕录制 中允许 Hoot，然后重新启动应用。"
             alert.addButton(withTitle: "打开系统设置")
             alert.addButton(withTitle: "取消")
             if alert.runModal() == .alertFirstButtonReturn {
