@@ -76,6 +76,8 @@ enum PinWindow {
         let panel = PinPanel(contentRect: CGRect(origin: .zero, size: view.frame.size), styleMask: [.borderless, .resizable],
                              backing: .buffered, defer: false)
         panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false   // stay on screen when another app (or a new capture) is in front
         panel.isMovableByWindowBackground = true
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false

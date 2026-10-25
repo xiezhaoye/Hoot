@@ -9,6 +9,9 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("截图") {
+                Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
+            }
             Section("界面") {
                 Toggle("始终在 Dock 显示", isOn: $settings.alwaysInDock)
                 Picker("历史栏位置", selection: $settings.historySide) {
@@ -32,7 +35,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 470)
+        .frame(width: 460, height: 520)
     }
 
     private func test() {

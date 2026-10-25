@@ -9,7 +9,8 @@ extension RGBA {
 @MainActor
 final class EditorModel: ObservableObject {
     @Published var doc: EditorDocument
-    @Published var tool: Tool = .select
+    @Published var tool: Tool = .hand            // .hand = no tool picked: drag to pan
+    @Published var zoomPercent = 100
     @Published var colorValue: Color = AppSettings.shared.annotationColor {
         didSet { AppSettings.shared.annotationColor = colorValue; canvas?.styleChanged(.color) }
     }

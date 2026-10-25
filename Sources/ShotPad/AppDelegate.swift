@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(item("截图  ⌃⌥A", #selector(captureAction)))
-        menu.addItem(item("贴图剪贴板  ⌃⌥P", #selector(pinAction)))
+        menu.addItem(item("钉住剪贴板  ⌃⌥P", #selector(pinAction)))
         menu.addItem(item("打开最近一张", #selector(openLatest)))
         let limits = NSMenuItem(title: "历史保留数量", action: nil, keyEquivalent: "")
         let sub = NSMenu()
@@ -161,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = result.image
         let entry = history.add(image)
         historyChanged()
+        if AppSettings.shared.copyAfterCapture { Clipboard.write(image) }
         let actions = QuickActions(
             copyText: { report in
                 Task { @MainActor in

@@ -8,6 +8,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     weak var model: EditorModel?
     private(set) var zoom: CGFloat = 0.5
     private var cache: CGImage?
+    private var panOrigin: (mouse: CGPoint, scroll: CGPoint)?
 
     // interaction state
     private var dragStart: CGPoint?
@@ -76,6 +77,46 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if model?.tool == .select || model?.tool == .crop { needsDisplay = true }
     }
 
+    // MARK: Zoom
+
+    private var backing: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
+
+    /// Changes the zoom keeping the image point under `anchor` (view coordinates) where it is on screen.
+    func setZoom(_ newZoom: CGFloat, anchor: CGPoint? = nil) {
+        guard doc != nil, let clip = enclosingScrollView?.contentView else { return }
+        commitText()
+        let z = min(max(newZoom, 0.05 / backing), 8 / backing)
+        guard abs(z - zoom) > 1e-6 else { return }
+        let pivot = anchor ?? convert(CGPoint(x: clip.bounds.midX, y: clip.bounds.midY), from: clip)
+        let img = imagePoint(viewPoint: pivot)
+        let rel = CGPoint(x: pivot.x - clip.bounds.minX, y: pivot.y - clip.bounds.minY)
+        zoom = z
+        let doc = self.doc!
+        frame.size = CGSize(width: doc.size.width * zoom + inset * 2, height: doc.size.height * zoom + inset * 2)
+        let np = viewPoint(img)
+        clip.scroll(to: NSPoint(x: np.x - rel.x, y: np.y - rel.y))
+        enclosingScrollView?.reflectScrolledClipView(clip)
+        model?.zoomPercent = Int((zoom * backing * 100).rounded())
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    func setZoomPercent(_ p: Int) { setZoom(CGFloat(p) / 100 / backing) }
+
+    func zoomToFit() {
+        guard let doc, let clip = enclosingScrollView?.contentView else { return }
+        let w = (clip.bounds.width - 24) / max(doc.size.width, 1), h = (clip.bounds.height - 24) / max(doc.size.height, 1)
+        setZoom(min(w, h, 1 / backing))
+        clip.scroll(to: NSPoint(x: inset - 12, y: inset - 12))
+        enclosingScrollView?.reflectScrolledClipView(clip)
+    }
+
+    override func magnify(with event: NSEvent) {
+        setZoom(zoom * (1 + event.magnification), anchor: convert(event.locationInWindow, from: nil))
+    }
+
+    func finishTextEditing() { commitText() }
+
     override func mouseExited(with event: NSEvent) {
         hoverPoint = nil
         needsDisplay = true
@@ -94,6 +135,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         selection = nil; cropRect = nil; draftRect = nil; draftPoints = []; selectedID = nil; annDrag = nil
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         zoom = 1 / scale
+        model?.zoomPercent = 100
         refresh()
         if resetScroll, let clip = enclosingScrollView?.contentView {
             clip.scroll(to: NSPoint(x: inset - 12, y: inset - 12))
@@ -177,6 +219,16 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             default: break
             }
             ctx.restoreGState()
+        }
+        if let tool = model?.tool, tool == .select || tool == .crop, let h = hoverPoint {
+            // full-width / full-height guide lines through the cursor
+            let line = selectionColor.withAlphaComponent(0.55)
+            line.setStroke()
+            let path = NSBezierPath()
+            path.lineWidth = 1
+            path.move(to: CGPoint(x: visibleRect.minX, y: h.y)); path.line(to: CGPoint(x: visibleRect.maxX, y: h.y))
+            path.move(to: CGPoint(x: h.x, y: visibleRect.minY)); path.line(to: CGPoint(x: h.x, y: visibleRect.maxY))
+            path.stroke()
         }
         if let tool = model?.tool, tool == .select || tool == .crop, let h = hoverPoint, let cache {
             let px = imagePoint(viewPoint: h)
@@ -262,6 +314,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             commitText()
         }
         window?.makeFirstResponder(self)
+        if model.tool == .hand, !(doc.patch.map { $0.rect.contains(p) || $0.hitHandle(at: p, slop: 7 / zoom) != nil } ?? false),
+           let clip = enclosingScrollView?.contentView {
+            panOrigin = (event.locationInWindow, clip.bounds.origin)
+            NSCursor.closedHand.set()
+            return
+        }
         // a floating block can be resized from its handles whatever tool is active
         if let patch = doc.patch, let h = patch.hitHandle(at: p, slop: 7 / zoom) {
             patchDrag = .resize(h, patch.rect); dragStart = p; return
@@ -314,6 +372,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let pan = panOrigin, let clip = enclosingScrollView?.contentView {
+            let dx = event.locationInWindow.x - pan.mouse.x, dy = event.locationInWindow.y - pan.mouse.y
+            clip.scroll(to: NSPoint(x: pan.scroll.x - dx, y: pan.scroll.y + dy))
+            enclosingScrollView?.reflectScrolledClipView(clip)
+            return
+        }
         guard let model, let doc, let s = dragStart else { return }
         let p = imagePoint(event)
         hoverPoint = convert(event.locationInWindow, from: nil)
@@ -377,6 +441,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if panOrigin != nil { panOrigin = nil; window?.invalidateCursorRects(for: self); return }
         guard let model, let doc, let s = dragStart else { dragStart = nil; return }
         if editDrag != nil { editDrag = nil; dragStart = nil; if let f = textField { window?.makeFirstResponder(f) }; return }
         defer { dragStart = nil; patchDrag = nil; annDrag = nil; editDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
@@ -522,6 +587,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case "s": model?.saveAs(); return true
         case "a": selection = doc?.bounds; model?.tool = .select; needsDisplay = true; return true
         case "z": event.modifierFlags.contains(.shift) ? redo() : undo(); return true
+        case "=", "+": setZoom(zoom * 1.25); return true
+        case "-": setZoom(zoom / 1.25); return true
+        case "0": setZoomPercent(100); return true
         default: return false
         }
     }
@@ -637,5 +705,5 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
     func cancelPatch() { doc?.cancelPatch(); needsDisplay = true }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: model?.tool == .select ? .arrow : .crosshair) }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: model?.tool == .hand ? .openHand : .crosshair) }
 }

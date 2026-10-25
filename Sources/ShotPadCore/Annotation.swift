@@ -12,7 +12,7 @@ public struct RGBA: Equatable, Codable {
 }
 
 public enum Tool: String, CaseIterable {
-    case select, rect, ellipse, line, arrow, pen, highlighter, mosaic, blur, text, number, crop
+    case hand, select, rect, ellipse, line, arrow, pen, highlighter, mosaic, blur, text, number, crop
 }
 
 /// All coordinates are in image pixels with the origin at the top-left.

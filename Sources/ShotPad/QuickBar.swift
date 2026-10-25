@@ -24,7 +24,7 @@ private struct QuickBarView: View {
             barButton("pencil.and.outline", "编辑") { actions.edit() }
             Divider().frame(height: 18)
             barButton("doc.on.doc", "复制") { actions.copyImage(); status = "已复制图片" }
-            barButton("pin", "贴图") { actions.pin() }
+            barButton("pin", "钉住") { actions.pin() }
             if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4) }
             Button { actions.close() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.borderless).help("关闭")

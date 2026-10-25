@@ -87,7 +87,7 @@ fileprivate final class OverlayView: NSView {
         image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
         NSColor.black.withAlphaComponent(0.4).setFill()
         bounds.fill(using: .sourceOver)
-        defer { drawMagnifier() }
+        defer { drawGuides(); drawMagnifier() }
         guard let r = selection ?? hover else { return }
         NSGraphicsContext.saveGraphicsState()
         r.clip()
@@ -108,6 +108,17 @@ fileprivate final class OverlayView: NSView {
 }
 
 extension OverlayView {
+    /// Hairlines across the whole screen through the cursor.
+    fileprivate func drawGuides() {
+        guard let c = cursor else { return }
+        let path = NSBezierPath()
+        path.lineWidth = 1
+        path.move(to: CGPoint(x: 0, y: c.y)); path.line(to: CGPoint(x: bounds.maxX, y: c.y))
+        path.move(to: CGPoint(x: c.x, y: 0)); path.line(to: CGPoint(x: c.x, y: bounds.maxY))
+        AppSettings.shared.selectionNSColor.withAlphaComponent(0.6).setStroke()
+        path.stroke()
+    }
+
     fileprivate func drawMagnifier() {
         guard let ctx = NSGraphicsContext.current?.cgContext, let c = cursor else { return }
         let k = shot.scale
@@ -123,6 +134,7 @@ final class CaptureOverlay {
     static let shared = CaptureOverlay()
     private var windows: [NSWindow] = []
     private var completion: ((CaptureResult?) -> Void)?
+    private var keyMonitor: Any?
 
     var isActive: Bool { !windows.isEmpty }
 
@@ -141,6 +153,11 @@ final class CaptureOverlay {
             w.contentView = view
             windows.append(w)
         }
+        // Esc cancels even when the key window / first responder is not the overlay view
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            if e.keyCode == 53 { self?.finish(nil); return nil }
+            return e
+        }
         NSApp.activate(ignoringOtherApps: true)
         for w in windows { w.makeKeyAndOrderFront(nil); w.makeFirstResponder(w.contentView) }
     }
@@ -148,6 +165,7 @@ final class CaptureOverlay {
     private func finish(_ image: CaptureResult?) {
         let done = completion
         completion = nil
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         windows.forEach { $0.orderOut(nil); $0.contentView = nil }
         windows.removeAll()
         done?(image)

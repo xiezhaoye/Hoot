@@ -256,7 +256,7 @@ struct BrowseDetail: View {
     var body: some View {
         ZStack {
             KeyCatcher(onKey: handleKey)
-            Color(nsColor: .underPageBackgroundColor).allowsHitTesting(false)
+            Color.white.allowsHitTesting(false)
             if model.selectedFolder == nil {
                 placeholder("从左侧选一个文件夹开始浏览")
             } else if model.files.isEmpty {

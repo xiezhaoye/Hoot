@@ -62,15 +62,24 @@ struct EditorView: View {
     private var toolbar: some View {
         HStack(spacing: 4) {
             ForEach(toolIcons, id: \.0) { tool, icon, help in
-                Button { model.tool = tool; model.canvas?.window?.invalidateCursorRects(for: model.canvas!) } label: {
-                    if icon.hasPrefix("text:") {
-                        Text(String(icon.dropFirst(5))).font(.system(size: 15, weight: .bold, design: .serif)).frame(width: 26, height: 22)
-                    } else {
-                        Image(systemName: icon).frame(width: 26, height: 22)
+                let on = model.tool == tool
+                Button {
+                    model.canvas?.finishTextEditing()
+                    model.tool = on ? .hand : tool          // pressing the active tool again puts it down
+                    model.canvas?.window?.invalidateCursorRects(for: model.canvas!)
+                } label: {
+                    Group {
+                        if icon.hasPrefix("text:") {
+                            Text(String(icon.dropFirst(5))).font(.system(size: 15, weight: .bold, design: .serif))
+                        } else {
+                            Image(systemName: icon)
+                        }
                     }
+                    .frame(width: 26, height: 22)
+                    .foregroundStyle(on ? Color.white : Color.primary)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(on ? Color.accentColor : Color.clear))
                 }
                 .buttonStyle(.bordered)
-                .tint(model.tool == tool ? .accentColor : nil)
                 .help(help)
             }
             Spacer(minLength: 12)
@@ -113,12 +122,24 @@ struct EditorView: View {
                 Stepper("", value: $model.fontSize, in: 8...200, step: 2).labelsHidden()
             case .select, .crop:
                 ColorPicker("选区框颜色", selection: $settings.selectionColor)
+            case .hand:
+                Text("未选工具：拖动画面可平移，捏合可缩放").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            zoomMenu
         }
         .controlSize(.small)
         .padding(.horizontal, 10).padding(.vertical, 5)
+    }
+
+    private var zoomMenu: some View {
+        Menu("\(model.zoomPercent)%") {
+            ForEach([25, 50, 100, 200, 400, 800], id: \.self) { p in Button("\(p)%") { model.canvas?.setZoomPercent(p) } }
+            Divider()
+            Button("适应窗口") { model.canvas?.zoomToFit() }
+        }
+        .fixedSize().help("缩放（触控板捏合；⌘+ ⌘- ⌘0）")
     }
 
     /// Colour well, eyedropper and the ten most recently used colours.
