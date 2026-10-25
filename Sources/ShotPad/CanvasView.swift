@@ -75,6 +75,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func mouseMoved(with event: NSEvent) {
         hoverPoint = convert(event.locationInWindow, from: nil)
         if model?.tool == .select || model?.tool == .crop { needsDisplay = true }
+        updateCursor(at: hoverPoint ?? .zero)
     }
 
     // MARK: Zoom
@@ -129,13 +130,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     /// Re-renders after the document (or its identity) changed.
-    func reload(resetScroll: Bool = false) {
+    /// `keepView` leaves zoom and scroll position alone (undo / redo), otherwise zoom returns to 100%.
+    func reload(resetScroll: Bool = false, keepView: Bool = false) {
         guard doc != nil else { return }
         commitText()
         selection = nil; cropRect = nil; draftRect = nil; draftPoints = []; selectedID = nil; annDrag = nil
-        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-        zoom = 1 / scale
-        model?.zoomPercent = 100
+        if !keepView {
+            zoom = 1 / backing
+            model?.zoomPercent = 100
+        }
         refresh()
         if resetScroll, let clip = enclosingScrollView?.contentView {
             clip.scroll(to: NSPoint(x: inset - 12, y: inset - 12))
@@ -284,11 +287,36 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     private func selectionHandle(at p: CGPoint, in rect: CGRect) -> Handle? {
-        let slop = 7 / zoom
-        return Handle.allCases.first { h in
-            let q = h.point(in: rect)
-            return abs(q.x - p.x) <= slop && abs(q.y - p.y) <= slop
+        Handle.hit(in: rect, at: p, slop: 7 / zoom)
+    }
+
+    private func resizeCursor(_ h: Handle) -> NSCursor {
+        let pos: NSCursor.FrameResizePosition
+        switch h {
+        case .topLeft: pos = .topLeft
+        case .top: pos = .top
+        case .topRight: pos = .topRight
+        case .right: pos = .right
+        case .bottomRight: pos = .bottomRight
+        case .bottom: pos = .bottom
+        case .bottomLeft: pos = .bottomLeft
+        case .left: pos = .left
         }
+        return NSCursor.frameResize(position: pos, directions: .all)
+    }
+
+    /// Cursor follows what a drag would do here: resize on a selection / block edge, move inside it.
+    private func updateCursor(at viewPoint: CGPoint) {
+        guard textField == nil, let model, let doc else { return }
+        let p = imagePoint(viewPoint: viewPoint)
+        if let patch = doc.patch {
+            if let h = patch.hitHandle(at: p, slop: 7 / zoom) { resizeCursor(h).set(); return }
+            if patch.rect.contains(p) { NSCursor.openHand.set(); return }
+        } else if model.tool == .select, let s = selection {
+            if let h = selectionHandle(at: p, in: s) { resizeCursor(h).set(); return }
+            if s.contains(p) { NSCursor.openHand.set(); return }
+        }
+        (model.tool == .hand ? NSCursor.openHand : NSCursor.crosshair).set()
     }
 
     private func outline(_ r: CGRect, color: NSColor, dashed: Bool) {
@@ -663,8 +691,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    func undo() { doc?.undo(); reload() }
-    func redo() { doc?.redo(); reload() }
+    func undo() { doc?.undo(); reload(keepView: true) }
+    func redo() { doc?.redo(); reload(keepView: true) }
 
     func finishPatch() { doc?.commitPatch(); refresh() }
 

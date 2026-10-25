@@ -17,6 +17,17 @@ public enum Handle: CaseIterable {
         }
     }
 
+    /// The handle under `point`: a corner or edge midpoint, or any point along an edge (within `slop`).
+    public static func hit(in r: CGRect, at p: CGPoint, slop: CGFloat) -> Handle? {
+        if let h = allCases.first(where: { h in let q = h.point(in: r); return abs(q.x - p.x) <= slop && abs(q.y - p.y) <= slop }) { return h }
+        let inX = p.x >= r.minX - slop && p.x <= r.maxX + slop, inY = p.y >= r.minY - slop && p.y <= r.maxY + slop
+        if inX, abs(p.y - r.minY) <= slop { return .top }
+        if inX, abs(p.y - r.maxY) <= slop { return .bottom }
+        if inY, abs(p.x - r.minX) <= slop { return .left }
+        if inY, abs(p.x - r.maxX) <= slop { return .right }
+        return nil
+    }
+
     public var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
     public var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
     public var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
@@ -53,9 +64,6 @@ public struct Patch {
 
     /// The handle under `point` (within `slop` pixels), if any.
     public func hitHandle(at point: CGPoint, slop: CGFloat) -> Handle? {
-        Handle.allCases.first { h in
-            let p = h.point(in: rect)
-            return abs(p.x - point.x) <= slop && abs(p.y - point.y) <= slop
-        }
+        Handle.hit(in: rect, at: point, slop: slop)
     }
 }
