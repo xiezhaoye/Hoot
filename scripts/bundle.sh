@@ -7,7 +7,8 @@ IDENTITY="${SHOTPAD_IDENTITY:-Apple Development: xiezhaoye@gmail.com (N5Y4XA8R9F
 swift build -c release
 APP=ShotPad.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp .build/release/ShotPad "$APP/Contents/MacOS/ShotPad"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -17,6 +18,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleName</key><string>ShotPad</string>
 <key>CFBundleDisplayName</key><string>ShotPad</string>
 <key>CFBundleExecutable</key><string>ShotPad</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>

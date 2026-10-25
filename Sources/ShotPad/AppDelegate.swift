@@ -52,13 +52,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TextTools.warmUp()
         NSApp.mainMenu = makeMainMenu()
         refreshPolicy()
+        openMain()
+    }
+
+    /// The editor is the main window: open the latest shot, or a blank white canvas when there is no history.
+    private func openMain() {
+        if let entry = history.entries.first, let image = history.image(for: entry.id) {
+            openEditor(image: image, entry: entry)
+        } else if let blank = Self.blankCanvas() {
+            openEditor(image: blank, entry: nil)
+        }
+    }
+
+    private static func blankCanvas() -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: 1200, height: 800, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+        return ctx.makeImage()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// Dock icon click with no window open: bring up the latest shot, or the settings if there is none.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { if history.entries.isEmpty { SettingsWindow.show() } else { openLatest() } }
+        if !flag { openMain() }
         return true
     }
 
