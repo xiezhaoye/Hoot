@@ -80,14 +80,14 @@ final class DocumentTests: XCTestCase {
         XCTAssertEqual(doc.patch?.rect, CGRect(x: 39, y: -9, width: 20, height: 20))
     }
 
-    func testCropAndAnnotationsAreBaked() {
+    func testCropKeepsAnnotationsEditable() {
         let doc = EditorDocument(image: solid(40, 40, .white))
         doc.add(Annotation(.rect(CGRect(x: 10, y: 10, width: 20, height: 20)), color: .black, lineWidth: 4))
         XCTAssertEqual(doc.nextNumber(), 1)
         doc.crop(to: CGRect(x: 5, y: 5, width: 30, height: 30))
         XCTAssertEqual(doc.state.base.width, 30)
-        XCTAssertTrue(doc.state.annotations.isEmpty)
-        XCTAssertEqual(pixel(doc.state.base, 5, 15).0, 0)   // the rect's left edge survived the crop
+        XCTAssertEqual(doc.state.annotations.count, 1)
+        XCTAssertEqual(pixel(doc.flattened(), 5, 15).0, 0)   // the rect's left edge survived the crop
         doc.undo()
         XCTAssertEqual(doc.state.base.width, 40)
     }
@@ -152,7 +152,10 @@ final class LiftTests: XCTestCase {
         XCTAssertEqual(pixel(out, 30, 30).2, 255)         // moved blue block
         XCTAssertEqual(pixel(out, 30, 30).0, 0)
         doc.cancelPatch()
-        XCTAssertEqual(pixel(doc.flattened(), 12, 12).0, 0)   // cancel restores
+        XCTAssertNil(doc.patch)
+        XCTAssertEqual(doc.patches.count, 1)  // Escape only deselects
+        doc.undo(); doc.undo()
+        XCTAssertEqual(pixel(doc.flattened(), 12, 12).0, 0)   // undo restores
     }
 
     func testOversizedPasteFitsCanvas() {
@@ -200,13 +203,14 @@ final class EditingTests: XCTestCase {
         XCTAssertFalse(line.hit(CGPoint(x: 50, y: 20), slop: 3))
     }
 
-    func testTextCornerScalesFontAndSideWraps() {
+    func testTextCornerScalesFontAndSideKeepsUnwrapped() {
         let t = Annotation(.text("Hello world", origin: CGPoint(x: 10, y: 10), fontSize: 20))
         let b = t.bounds!
         let grown = t.dragged(.box(.bottomRight), to: CGPoint(x: b.minX + b.width * 2, y: b.maxY * 2))
         if case .text(_, _, let size) = grown.kind { XCTAssertEqual(size, 40, accuracy: 0.5) } else { XCTFail() }
         let wrapped = t.dragged(.box(.right), to: CGPoint(x: b.minX + 40, y: 0))
-        XCTAssertEqual(wrapped.boxWidth ?? 0, 40, accuracy: 0.5)
+        XCTAssertNil(wrapped.boxWidth)
+        XCTAssertGreaterThanOrEqual(wrapped.textAreaWidth, 240)
         if case .text(_, _, let size) = wrapped.kind { XCTAssertEqual(size, 20) } else { XCTFail() }
     }
 }

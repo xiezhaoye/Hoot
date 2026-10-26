@@ -1,4 +1,5 @@
 import AppKit
+import ShotPadCore
 
 private final class OverlayWindow: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -19,13 +20,100 @@ fileprivate final class OverlayView: NSView {
     private var dragStart: CGPoint?
     private var selection: CGRect?
     private var hover: CGRect?
+    private var candidates: [CGRect] = []
+    private var candidateIndex = 0
+    private var visualRegions: [CGRect] = []
+    private var detailedRegions: [CGRect] = []
+    private let ownRegions: [CGRect]
+    private let smartCapture: Bool
+    private let cornerRadius: CGFloat
+    private let resolver = CaptureRegionResolver()
+    private var queryGeneration = 0
+    private var lastQueryPoint: CGPoint?
+    private var lastQueryWindow: CGWindowID?
+    private var wheelTotal: CGFloat = 0
+    private var userChoseCandidate = false
     private let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 
-    init(shot: ScreenShot, windows: [WindowInfo]) {
+    init(shot: ScreenShot, windows: [WindowInfo], ownRegions: [CGRect]) {
         self.shot = shot
         self.windows = windows
+        self.ownRegions = ownRegions
+        smartCapture = AppSettings.shared.smartCapture
+        cornerRadius = AppSettings.shared.roundedCapture ? CGFloat(max(0, AppSettings.shared.captureRadius.isFinite ? AppSettings.shared.captureRadius : 0)) : 0
         super.init(frame: CGRect(origin: .zero, size: shot.screen.frame.size))
+        setAccessibilityElement(true); setAccessibilityRole(.image)
+        setAccessibilityLabel("截图，拖动框选，Tab 切换范围，回车截图，Esc 取消")
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    func startDetection() {
+        // A click immediately after opening capture must work without a mouse-moved event.
+        let mouse = NSEvent.mouseLocation
+        cursor = CGPoint(x: mouse.x - shot.screen.frame.minX, y: shot.screen.frame.maxY - mouse.y)
+        updateTarget()
+        guard smartCapture else { return }
+        let image = shot.image
+        let globalBounds = global(.zero)
+        let screenRect = CGRect(origin: globalBounds, size: bounds.size)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let regions = CaptureVisualRegions.detect(image: image, screenRect: screenRect)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil else { return }
+                self.visualRegions = regions
+                if self.dragStart == nil { self.updateTarget(preserveSelection: self.userChoseCandidate) }
+            }
+        }
+    }
+
+    private func updateTarget(preserveSelection: Bool = false, query: Bool = true) {
+        guard let cursor, dragStart == nil else { return }
+        guard bounds.contains(cursor) else { hover = nil; candidates = []; needsDisplay = true; return }
+        let point = global(cursor)
+        guard let target = windows.first(where: { $0.rect.contains(point) }) else {
+            hover = nil; candidates = []; needsDisplay = true; return
+        }
+        let sameWindow = lastQueryWindow == target.windowID
+        if !sameWindow { detailedRegions = [] }
+        let localOwn = target.ownerPID == getpid() ? ownRegions : []
+        let regions = smartCapture ? visualRegions + localOwn + (sameWindow ? detailedRegions : []) : []
+        let previous = preserveSelection ? hover : nil
+        candidates = CaptureGeometry.candidates(at: point, window: target.rect, regions: regions)
+        candidateIndex = previous.flatMap { old in candidates.firstIndex { local($0).intersection(bounds) == old } } ?? 0
+        hover = candidates.isEmpty ? nil : local(candidates[candidateIndex]).intersection(bounds)
+        updateAccessibilityLabel()
+        needsDisplay = true
+        guard smartCapture, query else { return }
+        if let last = lastQueryPoint, sameWindow, hypot(last.x - point.x, last.y - point.y) < 5 { return }
+        queryGeneration += 1; let generation = queryGeneration
+        lastQueryPoint = point; lastQueryWindow = target.windowID
+        resolver.query(point: point, ownerPID: target.ownerPID) { [weak self] regions in
+            guard let self, self.window != nil, self.dragStart == nil, generation == self.queryGeneration else { return }
+            self.detailedRegions = regions
+            self.updateTarget(preserveSelection: self.userChoseCandidate, query: false)
+        }
+    }
+
+    private func cycleTarget(_ delta: Int) {
+        guard dragStart == nil, !candidates.isEmpty else { return }
+        userChoseCandidate = true
+        candidateIndex = (candidateIndex + delta + candidates.count) % candidates.count
+        hover = local(candidates[candidateIndex]).intersection(bounds); updateAccessibilityLabel(); needsDisplay = true
+    }
+    private func pixelRect(_ r: CGRect) -> CGRect {
+        CGRect(x: r.minX * shot.scale, y: r.minY * shot.scale, width: r.width * shot.scale, height: r.height * shot.scale)
+            .integral.intersection(CGRect(x: 0, y: 0, width: shot.image.width, height: shot.image.height))
+    }
+    private func updateAccessibilityLabel() {
+        guard let r = selection ?? hover, !r.isNull else { return }
+        let px = pixelRect(r)
+        let mode = selection != nil ? "手动选区" : "截图选区"
+        setAccessibilityLabel("\(mode) \(Int(px.width)) × \(Int(px.height)) 像素，范围 \(candidateIndex + 1)/\(candidates.count)，Tab 切换，回车截图，Esc 取消")
+    }
+    override func scrollWheel(with event: NSEvent) {
+        wheelTotal += event.scrollingDeltaY
+        let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 16 : 1
+        if abs(wheelTotal) >= threshold { cycleTarget(wheelTotal > 0 ? 1 : -1); wheelTotal = 0 }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -36,22 +124,24 @@ fileprivate final class OverlayView: NSView {
 
     /// Screen-local point (top-left origin) -> global top-left coordinates.
     private func global(_ p: CGPoint) -> CGPoint {
-        CGPoint(x: shot.screen.frame.minX + p.x, y: primaryHeight - shot.screen.frame.maxY + p.y)
+        CaptureGeometry.global(p, screen: shot.screen.frame, primaryHeight: primaryHeight)
     }
 
     private func local(_ r: CGRect) -> CGRect {
-        r.offsetBy(dx: -shot.screen.frame.minX, dy: -(primaryHeight - shot.screen.frame.maxY))
+        CaptureGeometry.local(r, screen: shot.screen.frame, primaryHeight: primaryHeight)
     }
 
     override func mouseMoved(with event: NSEvent) {
         cursor = convert(event.locationInWindow, from: nil)
-        let g = global(convert(event.locationInWindow, from: nil))
-        hover = windows.first { $0.rect.contains(g) }.map { local($0.rect).intersection(bounds) }
-        needsDisplay = true
+        userChoseCandidate = false
+        updateTarget()
     }
 
     override func mouseDown(with event: NSEvent) {
-        dragStart = convert(event.locationInWindow, from: nil)
+        cursor = convert(event.locationInWindow, from: nil)
+        updateTarget(preserveSelection: true, query: false)
+        dragStart = cursor
+        queryGeneration += 1; resolver.cancel()
         selection = nil
     }
 
@@ -61,23 +151,29 @@ fileprivate final class OverlayView: NSView {
         cursor = p
         selection = CGRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y)).intersection(bounds)
         hover = nil
-        needsDisplay = true
+        updateAccessibilityLabel(); needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
         defer { dragStart = nil }
         let rect: CGRect?
         if let s = selection, s.width >= 4, s.height >= 4 { rect = s } else { rect = hover }
+        accept(rect)
+    }
+
+    private func accept(_ rect: CGRect?) {
         guard let r = rect, r.width >= 2, r.height >= 2 else { selection = nil; needsDisplay = true; return }
-        let k = shot.scale
-        let px = CGRect(x: r.minX * k, y: r.minY * k, width: r.width * k, height: r.height * k).integral
+        let px = pixelRect(r)
         guard let cropped = shot.image.cropping(to: px) else { onFinish(nil); return }
         let f = shot.screen.frame
-        onFinish(CaptureResult(image: cropped, screenRect: CGRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)))
+        onFinish(CaptureResult(image: CaptureGeometry.rounded(cropped, radius: cornerRadius), screenRect: CGRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)))
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { onFinish(nil) } else { super.keyDown(with: event) }
+        if event.keyCode == 53 { onFinish(nil) }
+        else if event.keyCode == 36 || event.keyCode == 76 { accept(selection ?? hover) }
+        else if event.keyCode == 48 { cycleTarget(event.modifierFlags.contains(.shift) ? -1 : 1) }
+        else { super.keyDown(with: event) }
     }
 
     override func rightMouseDown(with event: NSEvent) { onFinish(nil) }
@@ -90,15 +186,15 @@ fileprivate final class OverlayView: NSView {
         defer { drawGuides(); drawMagnifier() }
         guard let r = selection ?? hover else { return }
         NSGraphicsContext.saveGraphicsState()
-        r.clip()
+        let radius = min(cornerRadius / shot.scale, min(r.width, r.height) / 2)
+        let path = NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
+        path.addClip()
         image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
-        let path = NSBezierPath(rect: r)
         path.lineWidth = 2
         (selection != nil ? AppSettings.shared.selectionNSColor : NSColor.systemGreen).setStroke()
         path.stroke()
-        let k = shot.scale
-        let label = " \(Int(r.width * k)) × \(Int(r.height * k)) " as NSString
+        let label = " \(Int(pixelRect(r).width)) × \(Int(pixelRect(r).height))\(selection == nil && candidates.count > 1 ? " · 滚轮 / Tab 切换范围" : "") " as NSString
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
                                                     .foregroundColor: NSColor.white,
                                                     .backgroundColor: NSColor.black.withAlphaComponent(0.7)]
@@ -138,17 +234,18 @@ final class CaptureOverlay {
 
     var isActive: Bool { !windows.isEmpty }
 
-    func begin(shots: [ScreenShot], windows infos: [WindowInfo], completion: @escaping (CaptureResult?) -> Void) {
+    func begin(shots: [ScreenShot], windows infos: [WindowInfo], ownRegions: [CGRect] = [], completion: @escaping (CaptureResult?) -> Void) {
         guard !isActive else { return }
         self.completion = completion
         for shot in shots {
             let w = OverlayWindow(contentRect: shot.screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: shot.screen)
             w.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+            w.title = "Hoot 截图"
             w.isOpaque = true
             w.hasShadow = false
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             w.setFrame(shot.screen.frame, display: false)
-            let view = OverlayView(shot: shot, windows: infos)
+            let view = OverlayView(shot: shot, windows: infos, ownRegions: ownRegions)
             view.onFinish = { [weak self] image in self?.finish(image) }
             w.contentView = view
             windows.append(w)
@@ -159,7 +256,9 @@ final class CaptureOverlay {
             return e
         }
         NSApp.activate(ignoringOtherApps: true)
-        for w in windows { w.makeKeyAndOrderFront(nil); w.makeFirstResponder(w.contentView) }
+        for w in windows { w.makeKeyAndOrderFront(nil); w.makeFirstResponder(w.contentView); (w.contentView as? OverlayView)?.startDetection() }
+        // Keyboard events belong to the display under the pointer, not always the last screen.
+        if let w = windows.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) { w.makeKeyAndOrderFront(nil); w.makeFirstResponder(w.contentView) }
     }
 
     private func finish(_ image: CaptureResult?) {

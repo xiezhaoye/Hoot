@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 public enum Handle: CaseIterable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
@@ -36,7 +37,9 @@ public enum Handle: CaseIterable {
 
 /// A floating block of pixels pasted over the canvas. Resizing scales its pixels
 /// with nearest-neighbour sampling, so flat blocks just cover a bigger area.
-public struct Patch {
+public struct Patch: Identifiable {
+    public var id = UUID()
+    public var isMask = false
     public var image: CGImage
     public var rect: CGRect
     /// Area the pixels were lifted from; it is blanked to white while the patch floats.
@@ -46,6 +49,13 @@ public struct Patch {
         self.image = image
         self.rect = rect
         self.vacated = vacated
+    }
+
+    public func rasterized() -> CGImage {
+        let ctx = Renderer.makeContext(width: max(1, Int(rect.width.rounded())), height: max(1, Int(rect.height.rounded())))
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+        return ctx.makeImage()!
     }
 
     /// Dragging `handle` of `original` to `point`. The opposite edge stays fixed and

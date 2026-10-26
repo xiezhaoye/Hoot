@@ -21,22 +21,22 @@ public enum Renderer {
         ctx.restoreGState()
     }
 
-    public static func render(base: CGImage, annotations: [Annotation], patch: Patch? = nil) -> CGImage {
+    public static func render(base: CGImage, annotations: [Annotation], patch: Patch? = nil, patches: [Patch] = [], order: [UUID]? = nil) -> CGImage {
         let w = base.width, h = base.height
         let ctx = makeContext(width: w, height: h)
         ctx.translateBy(x: 0, y: CGFloat(h))
         ctx.scaleBy(x: 1, y: -1)
         drawImage(ctx, base, in: CGRect(x: 0, y: 0, width: w, height: h))
-        for a in annotations { draw(a, in: ctx) }
-        if let patch {
-            if let hole = patch.vacated {
-                ctx.setFillColor(RGBA.white.cgColor)
-                ctx.fill(hole.integral)
+        let blocks = patches + (patch.map { [$0] } ?? [])
+        let sequence = order ?? (annotations.map(\.id) + blocks.map(\.id))
+        let annotationsByID = Dictionary(uniqueKeysWithValues: annotations.map { ($0.id, $0) })
+        let blocksByID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
+        for id in sequence {
+            if let a = annotationsByID[id] { draw(a, in: ctx) }
+            if let block = blocksByID[id] {
+                if let hole = block.vacated { ctx.setFillColor(RGBA.white.cgColor); ctx.fill(hole.integral) }
+                ctx.interpolationQuality = .none; drawImage(ctx, block.image, in: block.rect)
             }
-            ctx.saveGState()
-            ctx.interpolationQuality = .none
-            drawImage(ctx, patch.image, in: patch.rect.integral)
-            ctx.restoreGState()
         }
         return ctx.makeImage()!
     }
@@ -154,8 +154,11 @@ public enum Renderer {
             let r = str.boundingRect(with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin])
             return CGSize(width: width, height: ceil(r.height))
         }
-        let sz = str.size()
-        return CGSize(width: ceil(sz.width), height: ceil(sz.height))
+        let lines = s.components(separatedBy: "\n")
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let widest = lines.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }.max() ?? 0
+        return CGSize(width: ceil(widest), height: lineHeight * CGFloat(max(1, lines.count)))
     }
 
     /// Largest font size (≤ 90% of the box height) at which `s` fits the box width.

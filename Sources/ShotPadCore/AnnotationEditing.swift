@@ -10,7 +10,7 @@ public enum AnnotationHandle: Equatable {
 public extension Annotation {
     var isEditable: Bool {
         switch kind {
-        case .rect, .ellipse, .line, .arrow, .text, .number: return true
+        case .rect, .ellipse, .line, .arrow, .text, .number, .pen, .highlighter: return true
         default: return false
         }
     }
@@ -22,7 +22,11 @@ public extension Annotation {
         case .rect(let r), .ellipse(let r): return r.insetBy(dx: -t, dy: -t)
         case .line(let p, let q), .arrow(let p, let q): return CGRect.spanning(p, q).insetBy(dx: -t, dy: -t)
         case .text(let s, let o, let size):
-            return CGRect(origin: o, size: Renderer.textSize(s, fontSize: size, width: boxWidth))
+            let natural = Renderer.textSize(s, fontSize: size, width: boxWidth)
+            return CGRect(origin: o, size: CGSize(width: max(textAreaWidth, natural.width), height: max(size * 1.25, natural.height)))
+        case .pen(let points), .highlighter(let points):
+            guard let first = points.first else { return nil }
+            return points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }.insetBy(dx: -t, dy: -t)
         case .number(_, let c, let d): return CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
         default: return nil
         }
@@ -70,6 +74,8 @@ public extension Annotation {
             return abs(n - 1) * min(a, b) <= t
         case .line(let a, let b), .arrow(let a, let b):
             return Self.distance(from: p, toSegment: a, b) <= t
+        case .pen(let points), .highlighter(let points):
+            return zip(points, points.dropFirst()).contains { Self.distance(from: p, toSegment: $0.0, $0.1) <= t } || (points.count == 1 && hypot(p.x - points[0].x, p.y - points[0].y) <= t)
         case .text:
             return bounds?.insetBy(dx: -slop, dy: -slop).contains(p) ?? false
         case .number(_, let c, let d):
@@ -85,9 +91,13 @@ public extension Annotation {
         case .ellipse(let r): kind = .ellipse(r.offsetBy(dx: d.width, dy: d.height))
         case .line(let p, let q): kind = .line(sh(p), sh(q))
         case .arrow(let p, let q): kind = .arrow(sh(p), sh(q))
+        case .mosaic(let r, let block): kind = .mosaic(r.offsetBy(dx: d.width, dy: d.height), block: block)
+        case .blur(let r, let radius): kind = .blur(r.offsetBy(dx: d.width, dy: d.height), radius: radius)
+        case .textBox(let s, let r, let background): kind = .textBox(s, rect: r.offsetBy(dx: d.width, dy: d.height), background: background)
         case .text(let s, let o, let size): kind = .text(s, origin: sh(o), fontSize: size)
+        case .pen(let points): kind = .pen(points.map(sh))
+        case .highlighter(let points): kind = .highlighter(points.map(sh))
         case .number(let n, let c, let dia): kind = .number(n, center: sh(c), diameter: dia)
-        default: break
         }
     }
 
@@ -108,9 +118,12 @@ public extension Annotation {
             let start = CGPoint(x: p.x > q.x ? inner.maxX : inner.minX, y: p.y > q.y ? inner.maxY : inner.minY)
             let end = CGPoint(x: q.x >= p.x ? inner.maxX : inner.minX, y: q.y >= p.y ? inner.maxY : inner.minY)
             if case .line = kind { result.kind = .line(start, end) } else { result.kind = .arrow(start, end) }
+        case .pen(let points), .highlighter(let points):
+            let transformed = points.map { CGPoint(x: frame.minX + ($0.x - old.minX) * frame.width / max(1, old.width), y: frame.minY + ($0.y - old.minY) * frame.height / max(1, old.height)) }
+            if case .pen = kind { result.kind = .pen(transformed) } else { result.kind = .highlighter(transformed) }
         case .text(let text, _, let size):
             let font = max(8, size * frame.height / max(1, old.height))
-            if abs(frame.width - old.width) > 0.001 { result.boxWidth = frame.width }
+            if abs(frame.width - old.width) > 0.001 { result.textAreaWidth = frame.width; result.boxWidth = nil }
             result.kind = .text(text, origin: frame.origin, fontSize: font)
         case .number(let number, _, _):
             let diameter = max(12, min(frame.width, frame.height))
@@ -136,13 +149,15 @@ public extension Annotation {
             let dx = point.x - o.x, dy = point.y - o.y
             let d = max(12, abs(dx), abs(dy))
             a.kind = .number(n, center: CGPoint(x: o.x + (dx < 0 ? -d : d) / 2, y: o.y + (dy < 0 ? -d : d) / 2), diameter: d)
-        case (.text(let s, let o, let size), .box(let h)):
+        case (.pen, .box(let h)), (.highlighter, .box(let h)):
+            if let b = bounds { return settingFrame(Patch.resized(b, handle: h, to: point)) }
+        case (.text(let s, _, let size), .box(let h)):
             guard let b = bounds else { break }
             let edgeSideways = h == .left || h == .right
             if edgeSideways {
                 // side handles re-wrap the text without changing the font size
                 let r = Patch.resized(b, handle: h, to: point)
-                a.boxWidth = max(20, r.width)
+                a.textAreaWidth = max(240, r.width); a.boxWidth = nil
                 a.kind = .text(s, origin: CGPoint(x: r.minX, y: b.minY), fontSize: size)
             } else {
                 let r = Patch.resized(b, handle: h, to: point)
@@ -152,7 +167,7 @@ public extension Annotation {
                 let newSize = max(8, size * ratio)
                 let o2 = CGPoint(x: h.movesLeft ? anchor.x - b.width * ratio : b.minX,
                                  y: h.movesTop ? anchor.y - b.height * ratio : b.minY)
-                if let w = boxWidth { a.boxWidth = w * ratio }
+                a.textAreaWidth = max(240, textAreaWidth * ratio); a.boxWidth = nil
                 a.kind = .text(s, origin: o2, fontSize: newSize)
             }
         default: break

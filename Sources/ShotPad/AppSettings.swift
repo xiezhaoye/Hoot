@@ -34,6 +34,9 @@ final class AppSettings: ObservableObject {
     enum HistorySide: String { case left, right }
 
     @Published var alwaysInDock: Bool { didSet { d.set(alwaysInDock, forKey: "alwaysInDock"); (NSApp.delegate as? AppDelegate)?.refreshPolicy() } }
+    @Published var smartCapture: Bool { didSet { d.set(smartCapture, forKey: "smartCapture") } }
+    @Published var roundedCapture: Bool { didSet { d.set(roundedCapture, forKey: "roundedCapture") } }
+    @Published var captureRadius: Double { didSet { d.set(captureRadius, forKey: "captureRadius") } }
     @Published var copyAfterCapture: Bool { didSet { d.set(copyAfterCapture, forKey: "copyAfterCapture") } }
     @Published var boardWidth: Int { didSet { d.set(boardWidth, forKey: "boardWidth") } }
     @Published var boardHeight: Int { didSet { d.set(boardHeight, forKey: "boardHeight") } }
@@ -67,6 +70,9 @@ final class AppSettings: ObservableObject {
 
     private init() {
         alwaysInDock = d.object(forKey: "alwaysInDock") as? Bool ?? true
+        smartCapture = d.object(forKey: "smartCapture") as? Bool ?? true
+        roundedCapture = d.bool(forKey: "roundedCapture")
+        captureRadius = d.object(forKey: "captureRadius") as? Double ?? 12
         copyAfterCapture = d.bool(forKey: "copyAfterCapture")
         imageFormat = d.string(forKey: "imageFormat").flatMap(ImageFormat.init(rawValue:)) ?? .png
         captureKeyCode = d.object(forKey: "captureKeyCode") as? Int ?? 0

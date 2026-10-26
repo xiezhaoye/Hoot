@@ -21,6 +21,15 @@ final class EditorModel: ObservableObject {
     @Published var opacity: Double = 1 { didSet { canvas?.styleChanged(.appearance) } }
     @Published var cornerRadius: CGFloat = 0 { didSet { canvas?.styleChanged(.appearance) } }
     @Published var shadow = false { didSet { canvas?.styleChanged(.appearance) } }
+    @Published var numberDiameter: CGFloat = max(64, UserDefaults.standard.double(forKey: "numberDiameter")) {
+        didSet { UserDefaults.standard.set(numberDiameter, forKey: "numberDiameter") }
+    }
+    let sessionID = UUID()
+    private let scratchID = UUID()
+    var documentID: UUID { currentID ?? scratchID }
+    private var draftTimer: Timer?
+    var savedURL: URL?
+    var restoredView: (zoom: Int, origin: CGPoint?)?
     @Published var aspectLocked = false
     @Published var sidebarVisible = true
     @Published var inspectorVisible = true
@@ -35,7 +44,7 @@ final class EditorModel: ObservableObject {
     weak var canvas: CanvasView?
 
     init(image: CGImage, history: HistoryStore, entry: HistoryEntry?) {
-        self.doc = EditorDocument(image: image)
+        self.doc = entry.flatMap { DraftStore.load($0.id) } ?? EditorDocument(image: image)
         self.history = history
         self.currentID = entry?.id
         self.entries = history.entries
@@ -43,7 +52,17 @@ final class EditorModel: ObservableObject {
 
     var color: RGBAWrapper { RGBAWrapper(colorValue) }
 
-    func documentChanged() { revision += 1 }
+    func documentChanged() {
+        revision += 1
+        draftTimer?.invalidate()
+        draftTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                do { try DraftStore.save(self) } catch { self.status = "草稿保存失败：\(error.localizedDescription)" }
+            }
+        }
+    }
+    func checkpoint() throws { draftTimer?.invalidate(); try DraftStore.save(self) }
 
     var hasPatch: Bool { revision >= 0 && doc.patch != nil }
 
@@ -72,7 +91,7 @@ final class EditorModel: ObservableObject {
             if locked { frame.size.width *= height / max(1, frame.height) }
             frame.size.height = height
         } else { frame[keyPath: keyPath] = value }
-        if hasPatch { doc.setPatchRect(frame); canvas?.needsDisplay = true }
+        if hasPatch { doc.setPatchRect(frame); canvas?.refresh() }
         else { canvas?.setSelectedFrame(frame) }
     }
 
@@ -87,7 +106,10 @@ final class EditorModel: ObservableObject {
 
     /// Writes the edited picture back to its history entry.
     func persistCurrent() {
-        guard let id = currentID, doc.isModified || doc.patch != nil else { return }
+        canvas?.finishTextEditing()
+        if currentID == nil, doc.isModified, let entry = history.add(doc.flattened(), format: AppSettings.shared.imageFormat, namePrefix: "画板") { currentID = entry.id }
+        do { try checkpoint() } catch { status = "草稿保存失败：\(error.localizedDescription)" }
+        guard let id = currentID, doc.isModified else { return }
         history.update(id, with: doc.flattened())
         entries = history.entries
     }
@@ -95,7 +117,8 @@ final class EditorModel: ObservableObject {
     func open(_ entry: HistoryEntry) {
         guard entry.id != currentID, let image = history.image(for: entry.id) else { return }
         persistCurrent()
-        doc = EditorDocument(image: image)
+        doc = DraftStore.load(entry.id) ?? EditorDocument(image: image)
+        savedURL = nil
         currentID = entry.id
         canvas?.reload(resetScroll: true)
         status = "已打开历史截图"
@@ -112,6 +135,7 @@ final class EditorModel: ObservableObject {
 
     func deleteEntry(_ entry: HistoryEntry) {
         history.remove(entry.id)
+        DraftStore.removeDocument(entry.id)
         entries = history.entries
         if entry.id == currentID { currentID = nil }
     }
@@ -123,13 +147,28 @@ final class EditorModel: ObservableObject {
         status = "已复制到剪贴板"
     }
 
+    func fixAll() {
+        canvas?.finishTextEditing(); doc.flattenAll(); canvas?.reload(keepView: true)
+        canvas?.window?.makeFirstResponder(canvas)
+        status = "已固定全部，可用 ⌘Z 恢复编辑"
+    }
+
     func saveAs() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        panel.nameFieldStringValue = "截图 \(f.string(from: Date())).png"
-        guard panel.runModal() == .OK, let url = panel.url, let data = doc.flattened().pngData else { return }
-        do { try data.write(to: url); status = "已保存 \(url.lastPathComponent)" } catch { status = "保存失败：\(error.localizedDescription)" }
+        canvas?.finishTextEditing()
+        var destination = savedURL
+        if destination == nil {
+            let panel = NSSavePanel(); panel.allowedContentTypes = [.png]
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
+            panel.nameFieldStringValue = "截图 \(f.string(from: Date())).png"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            destination = url
+        }
+        guard let url = destination, let data = doc.flattened().pngData else { status = "保存失败：无法生成图片"; return }
+        do {
+            try data.write(to: url, options: .atomic)
+            doc.flattenAll(); savedURL = url; canvas?.reload(keepView: true)
+            persistCurrent(); canvas?.window?.makeFirstResponder(canvas); status = "已保存 \(url.lastPathComponent)，⌘Z 可恢复对象编辑"
+        } catch { status = "保存失败：\(error.localizedDescription)" }
     }
 
     func pin() {
@@ -142,7 +181,7 @@ final class EditorModel: ObservableObject {
     private func recognitionTarget() -> CGImage {
         let full = doc.flattened()
         if let s = canvas?.selectionRect, s.width > 4, s.height > 4,
-           let region = full.cropping(to: s.integral.intersection(doc.bounds)) { return region }
+           let region = doc.composite(includeEditing: true).cropping(to: s.integral.intersection(doc.bounds)) { return region }
         return full
     }
 

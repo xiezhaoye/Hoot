@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 import ShotPadCore
+import ApplicationServices
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
     @State private var testResult = ""
+    @ObservedObject private var updater = UpdateManager.shared
+    @State private var category = "通用"
     @State private var testing = false
     @State private var historyPath = Settings.historyDirectory.path
     @State private var directoryNote = ""
@@ -30,7 +33,24 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach([("通用", "slider.horizontal.3"), ("识字与翻译", "translate"), ("关于与更新", "info.circle")], id: \.0) { title, icon in
+                    Button { category = title } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: icon).resizable().scaledToFit().frame(width: 18, height: 18).frame(width: 22, height: 22)
+                            Text(title).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
+                        }.foregroundStyle(Color.primary.opacity(0.78))
+                            .padding(.horizontal, 10).frame(height: 42).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(category == title ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(RoundedRectangle(cornerRadius: 7))
+                    }.buttonStyle(.plain).focusEffectDisabled()
+                }
+                Spacer()
+            }.padding(14).frame(width: 158).background(.bar)
+            Divider()
+            Form {
+            if category == "通用" {
             Section("截图") {
                 HStack {
                     Text("截图快捷键")
@@ -41,6 +61,24 @@ struct SettingsView: View {
                     ForEach(ImageFormat.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
+                Toggle("智能识别窗口内部模块", isOn: $settings.smartCapture)
+                Text("悬停选择控件、面板或窗口，滚轮 / Tab 切换范围；随时可拖动框选。未授权时使用本机图像识别，授权辅助功能后可更准确地识别其他 App 的控件。").font(.caption).foregroundStyle(.secondary)
+                Button("授权辅助功能…") {
+                    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                    _ = AXIsProcessTrustedWithOptions(options)
+                }.disabled(!settings.smartCapture)
+                Toggle("截图圆角", isOn: $settings.roundedCapture)
+                if settings.roundedCapture {
+                    HStack {
+                        Text("圆角半径（像素）")
+                        Spacer()
+                        TextField("圆角半径", value: $settings.captureRadius, format: .number.precision(.fractionLength(0)))
+                            .frame(width: 55).multilineTextAlignment(.trailing)
+                        Stepper("圆角半径", value: $settings.captureRadius, in: 0...200, step: 2).labelsHidden()
+                        Menu("预设") { ForEach([0, 4, 8, 12, 16, 24, 32, 48], id: \.self) { radius in Button("\(radius) px") { settings.captureRadius = Double(radius) } } }
+                    }
+                    Text("0 为直角；圆角区域透明，实际半径不超过截图短边的一半。PNG 可保留透明圆角，JPG 等格式会使用白底。").font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Text("编辑画板大小（像素）")
                     Spacer()
@@ -76,6 +114,9 @@ struct SettingsView: View {
                 ColorPicker("标注颜色（画笔、箭头、文字等）", selection: $settings.annotationColor)
                 ColorPicker("选区 / 裁剪框颜色", selection: $settings.selectionColor)
             }
+            }
+            if category == "识字与翻译" {
+            Section("本地识字") { Text("使用 macOS Vision 在本机识别文字，无需上传图片。").foregroundStyle(.secondary) }
             Section("大模型翻译（OpenAI 兼容接口）") {
                 TextField("Base URL", text: $settings.baseURL, prompt: Text("https://api.openai.com/v1"))
                 SecureField("API Key", text: $settings.apiKey)
@@ -88,9 +129,35 @@ struct SettingsView: View {
                 Text("三项都填写才会启用，翻译时优先使用；失败或未配置时回退到系统本地翻译。Key 保存在系统钥匙串。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }
-        .formStyle(.grouped)
-        .frame(width: 480, height: 640)
+            }
+            if category == "关于与更新" {
+                Section("Hoot") {
+                    HStack(spacing: 14) {
+                        Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 64, height: 64)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Hoot").font(.title2.bold())
+                            Text("版本 \(UpdateManager.version)（\(UpdateManager.build)）").foregroundStyle(.secondary)
+                            Text("截图 · 浏览 · 编辑").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Link("GitHub · 源码与反馈", destination: URL(string: "https://github.com/xiezhaoye/Hoot")!)
+                    Link("Hoot 主页", destination: URL(string: "https://hoot.xiezhaoye.site/")!)
+                    Text("© 2026 xiezhaoye · MIT License").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("在线更新") {
+                    Toggle("自动检查更新", isOn: $updater.automaticallyCheck)
+                    Text("自动检查每日一次。安装前会提示，重启后恢复画板、可编辑对象和撤销记录。").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("检查更新") { Task { await updater.check() } }.disabled(updater.busy)
+                        if updater.busy { ProgressView().controlSize(.small) }
+                        if updater.available != nil { Button("安装并重启") { Task { await updater.install() } }.disabled(updater.busy).buttonStyle(.borderedProminent) }
+                    }
+                    if !updater.message.isEmpty { Text(updater.message).font(.caption).textSelection(.enabled) }
+                    if let notes = updater.available?.body { Text(notes).font(.caption).textSelection(.enabled) }
+                }
+            }
+            }.formStyle(.grouped).frame(maxWidth: .infinity)
+        }.frame(width: 740, height: 650)
     }
 
     private func test() {
@@ -112,6 +179,9 @@ enum SettingsWindow {
     static var isVisible: Bool { window?.isVisible ?? false }
 
     static func show() {
+        let editor = NSApp.windows.first { $0.isKeyWindow && $0.title == "Hoot" }
+            ?? NSApp.windows.first { $0.isMainWindow && $0.title == "Hoot" }
+            ?? NSApp.windows.first { $0.isVisible && $0.title == "Hoot" }
         if window == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "Hoot 设置"
@@ -123,6 +193,14 @@ enum SettingsWindow {
                 DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.refreshPolicy() }
             }
             window = w
+        }
+        if let w = window {
+            let screen = editor?.screen ?? NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+            let area = editor?.frame ?? screen?.visibleFrame ?? w.frame
+            let visible = screen?.visibleFrame ?? area
+            let x = min(max(area.midX - w.frame.width / 2, visible.minX), max(visible.minX, visible.maxX - w.frame.width))
+            let y = min(max(area.midY - w.frame.height / 2, visible.minY), max(visible.minY, visible.maxY - w.frame.height))
+            w.setFrameOrigin(NSPoint(x: x, y: y))
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)

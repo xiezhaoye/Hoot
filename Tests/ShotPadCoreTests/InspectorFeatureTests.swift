@@ -74,11 +74,12 @@ final class InspectorFeatureTests: XCTestCase {
         } else { XCTFail() }
     }
 
-    func testTextFrameWidthWrapsWithoutChangingFontAndHeightScalesFont() {
+    func testTextFrameWidthChangesInteractionAreaWithoutWrappingAndHeightScalesFont() {
         let text = Annotation(.text("Hello world", origin: CGPoint(x: 10, y: 20), fontSize: 20))
         let bounds = text.bounds!
         let wrapped = text.settingFrame(CGRect(x: 10, y: 20, width: 40, height: bounds.height))
-        XCTAssertEqual(wrapped.boxWidth, 40)
+        XCTAssertNil(wrapped.boxWidth)
+        XCTAssertEqual(wrapped.textAreaWidth, 40)
         if case .text(_, _, let font) = wrapped.kind { XCTAssertEqual(font, 20) } else { XCTFail() }
         let scaled = text.settingFrame(CGRect(x: 10, y: 20, width: bounds.width * 2, height: bounds.height * 2))
         if case .text(_, _, let font) = scaled.kind { XCTAssertEqual(font, 40) } else { XCTFail() }

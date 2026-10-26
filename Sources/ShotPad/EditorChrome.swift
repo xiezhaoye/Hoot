@@ -72,7 +72,7 @@ extension Tool {
         case .hand: "拖动画布以移动，捏合以缩放"
         case .select: "框选区域后复制、粘贴或拖动移动"
         case .crop: "拖动框选裁剪区域，按回车确认"
-        case .text: "点击输入文字，回车确认，Shift + 回车换行"
+        case .text: "点击输入文字，回车换行，拖动边框移动"
         case .number: "点击添加序号，拖动手柄调整大小"
         case .pen, .highlighter: "按住并拖动，自由绘制\(title)"
         case .mosaic, .blur: "拖动框选需要\(title)处理的区域"

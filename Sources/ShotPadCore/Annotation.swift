@@ -16,8 +16,8 @@ public enum Tool: String, CaseIterable {
 }
 
 /// All coordinates are in image pixels with the origin at the top-left.
-public struct Annotation: Identifiable {
-    public enum Kind {
+public struct Annotation: Identifiable, Codable {
+    public enum Kind: Codable {
         case rect(CGRect)
         case ellipse(CGRect)
         case line(CGPoint, CGPoint)
@@ -32,14 +32,16 @@ public struct Annotation: Identifiable {
         case textBox(String, rect: CGRect, background: RGBA)
     }
 
-    public let id = UUID()
+    public var id = UUID()
     public var kind: Kind
     public var color: RGBA
     public var lineWidth: CGFloat
     /// Wrap width for `.text`; nil means one unwrapped line.
     public var boxWidth: CGFloat?
+    /// Transparent interaction area, independent of glyph width and wrapping.
+    public var textAreaWidth: CGFloat = 240
     /// Optional appearance controls. Defaults preserve the original renderer exactly.
-    public enum Fill: String, CaseIterable { case none, translucent, solid }
+    public enum Fill: String, CaseIterable, Codable { case none, translucent, solid }
     public var fill: Fill = .none
     public var opacity: Double = 1
     public var cornerRadius: CGFloat = 0

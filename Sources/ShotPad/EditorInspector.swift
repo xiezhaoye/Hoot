@@ -11,7 +11,17 @@ struct EditorInspector: View {
     @State private var drafts: [Dimension: String] = [:]
     @FocusState private var focusedDimension: Dimension?
     private let presets: [Color] = [EditorStyle.accent, Color(red: 1, green: 0.376, blue: 0.345), Color(red: 1, green: 0.741, blue: 0.18), Color(red: 0.208, green: 0.788, blue: 0.416), Color(red: 0.204, green: 0.212, blue: 0.243)]
-    private var tool: Tool { model.tool }
+    private var tool: Tool {
+        if let a = model.selectedAnnotation {
+            switch a.kind {
+            case .rect: return .rect; case .ellipse: return .ellipse; case .line: return .line
+            case .arrow: return .arrow; case .text: return .text; case .number: return .number
+            case .pen: return .pen; case .highlighter: return .highlighter
+            default: break
+            }
+        }
+        return model.tool
+    }
 
     private enum Dimension: String, CaseIterable {
         case width = "W", height = "H", x = "X", y = "Y"
@@ -255,9 +265,9 @@ struct EditorInspector: View {
     }
     private var patchSection: some View {
         InspectorSection("局部覆盖") {
-            Text("拖动移动，拖手柄调整尺寸。确认后，浮动块会写入图像。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
-            Button("确认浮动块 ⏎") { model.canvas?.finishPatch() }.buttonStyle(.borderedProminent).controlSize(.small)
-            Button("取消 Esc") { model.canvas?.cancelPatch() }.controlSize(.small)
+            Text("拖动移动，拖手柄调整尺寸。历史区块仍可选中；保存或固定全部时统一合并。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
+            Button("固定全部") { model.fixAll() }.buttonStyle(.borderedProminent).controlSize(.small)
+            Button("删除区块") { model.canvas?.cancelPatch() }.controlSize(.small)
         }
     }
     private func hint(_ text: String) -> some View { Text(text).font(.system(size: 10)).foregroundStyle(.tertiary).lineSpacing(4).padding(18) }

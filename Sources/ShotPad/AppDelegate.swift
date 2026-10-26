@@ -40,15 +40,18 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        model.canvas?.finishPatch()
+        if (NSApp.delegate as? AppDelegate)?.isTerminating == true { return }
         model.persistCurrent()
+        DraftStore.close(model.sessionID)
         onClose?(self)
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private(set) var isTerminating = false
     private var statusItem: NSStatusItem!
+    private var capturePending = false
     private var captureItem: NSMenuItem?
     private var editors: [EditorWindowController] = []
     private let history = HistoryStore(directory: Settings.historyDirectory, limit: Settings.historyLimit)
@@ -61,9 +64,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
         TextTools.warmUp()
+        ScreenCapture.warmUp()
         NSApp.mainMenu = makeMainMenu()
         refreshPolicy()
-        openMain()
+        let sessions = DraftStore.sessions()
+        var restored = false
+        for session in sessions {
+            guard let doc = DraftStore.load(session.documentID) else { continue }
+            let entry = history.entries.first { $0.id == session.historyID }
+            let controller = openEditor(image: doc.state.base, entry: entry)
+            controller.model.doc = doc
+            controller.model.canvas?.reload(resetScroll: true)
+            controller.model.tool = session.tool.flatMap(Tool.init(rawValue:)) ?? .hand
+            controller.model.savedURL = session.savedURL
+            controller.model.restoredView = (session.zoom, session.scrollOrigin)
+            DispatchQueue.main.async { controller.model.canvas?.restoreViewport() }
+            if !session.frame.isEmpty {
+                let frame = NSRectFromString(session.frame)
+                if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) { controller.window.setFrame(frame, display: true) }
+            }
+            do { try controller.model.checkpoint(); DraftStore.close(session.id); restored = true }
+            catch { controller.model.status = "恢复成功，但草稿暂时无法写入"; restored = true }
+        }
+        if !restored { openMain() }
+        UpdateManager.shared.start()
+    }
+
+    func checkpointEditors() throws {
+        for editor in editors { editor.model.canvas?.finishTextEditing(); try editor.model.checkpoint() }
+    }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        do { try checkpointEditors(); isTerminating = true; return .terminateNow }
+        catch {
+            let alert = NSAlert(); alert.messageText = "无法保存编辑草稿"; alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "返回画板"); alert.runModal(); return .terminateCancel
+        }
     }
 
     /// The editor is the main window: open the latest shot, or a blank white canvas when there is no history.
@@ -114,12 +149,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let quit = item("退出 Hoot", #selector(NSApplication.terminate(_:)), target: NSApp); quit.keyEquivalent = "q"
         app.addItem(quit)
         appItem.submenu = app
+        let fileItem = NSMenuItem(); main.addItem(fileItem)
+        let file = NSMenu(title: "文件")
+        let save = item("保存…", #selector(saveCurrent)); save.keyEquivalent = "s"; file.addItem(save)
+        let fix = item("固定全部", #selector(fixCurrent)); fix.keyEquivalent = "f"; fix.keyEquivalentModifierMask = [.command, .shift]; file.addItem(fix)
+        fileItem.submenu = file
         let editItem = NSMenuItem(); main.addItem(editItem)
         let edit = NSMenu(title: "编辑")
         for (title, sel, key) in [("剪切", #selector(NSText.cut(_:)), "x"), ("复制", #selector(NSText.copy(_:)), "c"),
                                   ("粘贴", #selector(NSText.paste(_:)), "v"), ("全选", #selector(NSText.selectAll(_:)), "a")] {
             edit.addItem(withTitle: title, action: sel, keyEquivalent: key)
         }
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
         editItem.submenu = edit
         return main
     }
@@ -153,6 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return it
     }
 
+    private var activeEditor: EditorWindowController? { editors.first { $0.window.isKeyWindow } ?? editors.first { $0.window.isMainWindow } }
+    @objc private func saveCurrent() { activeEditor?.model.saveAs() }
+    @objc private func fixCurrent() { activeEditor?.model.fixAll() }
     @objc private func openSettings() { SettingsWindow.show() }
     @objc private func captureAction() { capture() }
     @objc private func pinAction() { pinClipboard() }
@@ -202,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func capture() {
-        guard !CaptureOverlay.shared.isActive else { return }
+        guard !capturePending, !CaptureOverlay.shared.isActive else { return }
         QuickBar.dismiss()
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
@@ -216,11 +263,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
-        Task {
+        capturePending = true
+        Task { [self] in
+            defer { capturePending = false }
             do {
-                let shots = try await ScreenCapture.captureAll()
                 let windows = ScreenCapture.windows()
-                CaptureOverlay.shared.begin(shots: shots, windows: windows) { [weak self] result in
+                let ownRegions = AppSettings.shared.smartCapture ? CaptureRegionResolver.ownRegions() : []
+                let shots = try await ScreenCapture.captureAll()
+                CaptureOverlay.shared.begin(shots: shots, windows: windows, ownRegions: ownRegions) { [weak self] result in
                     guard let self, let result else { return }
                     self.showQuickBar(for: result)
                 }
@@ -230,11 +280,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func openEditor(image: CGImage, entry: HistoryEntry?, board: Bool = false) {
+    @discardableResult
+    private func openEditor(image: CGImage, entry: HistoryEntry?, board: Bool = false) -> EditorWindowController {
         let controller = EditorWindowController(image: image, history: history, entry: entry, board: board)
         controller.onClose = { [weak self] c in self?.editors.removeAll { $0 === c }; self?.historyChanged(); self?.refreshPolicy() }
         editors.append(controller)
         refreshPolicy()
         controller.show()
+        controller.model.documentChanged()
+        return controller
     }
 }

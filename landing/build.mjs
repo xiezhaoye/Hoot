@@ -3,7 +3,7 @@ import { join } from "node:path";
 const root = import.meta.dirname;
 const dist = join(root, "dist");
 const html = readFileSync(join(root, "index.html"), "utf8");
-for (const required of ["assets/logo.png", "assets/hoot-editor.jpg", "assets/annotation-example.png", "https://github.com/xiezhaoye/Hoot"]) {
+for (const required of ["assets/logo.png", "assets/hoot-editor-0.2.1.jpg", "assets/annotation-example.png", "https://github.com/xiezhaoye/Hoot"]) {
   if (!html.includes(required)) throw new Error(`Missing page asset or project link: ${required}`);
 }
 rmSync(dist, { recursive: true, force: true });

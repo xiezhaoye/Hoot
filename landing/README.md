@@ -27,7 +27,7 @@ Worker 名称 `hoot-site`，域名 `hoot.xiezhaoye.site`。不修改 XMark 的 W
 
 - `index.html` / `style.css` / `site.js`：落地页，无运行时依赖与追踪脚本。
 - `assets/logo.png`：从项目原有 AppIcon.icns 导出。
-- `assets/hoot-editor.jpg`：使用用户提供的标注图片，在隔离历史目录中运行实际 Hoot 界面所得截图。
+- `assets/hoot-editor-0.2.1.jpg`：使用用户提供的标注图片，在隔离历史目录中运行 Hoot 0.2.1 所得实际界面截图，显示持续编辑和保存入口。
 - `assets/annotation-example.png`：用户指定的产品介绍图。
 - `wrangler.jsonc`：部署配置。
 

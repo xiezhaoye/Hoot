@@ -128,7 +128,7 @@ struct EditorView: View {
                             .disabled(browse.current == nil).opacity(browse.current == nil ? 0.4 : 1)
                             .help("送进编辑器，结果另存到“截图”，不改原文件（回车）")
                     }
-                }.padding(.horizontal, 12).frame(width: EditorStyle.inspectorWidth)
+                }.padding(.horizontal, 12).frame(width: settings.historySide == .right ? EditorStyle.sidebarWidth : EditorStyle.inspectorWidth)
             }.frame(maxWidth: .infinity).frame(height: 70)
                 .background(EditorStyle.panel.opacity(0.7))
         }.frame(height: 70)
@@ -144,6 +144,10 @@ struct EditorView: View {
             Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
                 .buttonStyle(EditorIconButtonStyle()).disabled(!model.doc.canRedo).help("重做 ⇧⌘Z").accessibilityLabel("重做")
             headerSeparator
+            Button { model.fixAll() } label: { Image(systemName: "square.stack.3d.down.right") }
+                .buttonStyle(EditorIconButtonStyle()).help("固定全部，可撤销 ⇧⌘F").accessibilityLabel("固定全部")
+                .disabled(!model.doc.hasEditableObjects)
+            Button("保存") { model.saveAs() }.buttonStyle(.borderedProminent).help("固定全部并保存 ⌘S")
             Button { model.runOCR() } label: {
                 HStack(spacing: 7) { Image(systemName: "text.viewfinder").font(.system(size: 16)); if windowWidth >= 1180 { Text("识别文字").fixedSize() } }
             }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("识别文字").help("识别选区或整张图像中的文字")
@@ -232,8 +236,8 @@ struct EditorView: View {
             Text("·"); Text(model.currentEntry?.formatLabel ?? "PNG")
             Spacer(minLength: 12)
             if model.hasPatch {
-                Button("确认浮动块 ⏎") { model.canvas?.finishPatch() }
-                Button("取消") { model.canvas?.cancelPatch() }
+                Text("区块可持续编辑")
+                Button("删除区块") { model.canvas?.cancelPatch() }
             } else { Text(model.tool.hint).lineLimit(1).truncationMode(.tail) }
             HStack(spacing: 3) {
                 ForEach([50, 100, 150], id: \.self) { value in
