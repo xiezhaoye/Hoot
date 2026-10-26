@@ -15,7 +15,7 @@
   <meta property="og:title" content="Hoot — 截图、看图、编辑，在 Mac 上一气呵成">
   <meta property="og:description" content="受 PicPick 启发，为 macOS 原生打造。免费使用，MIT 开源。">
   <meta property="og:url" content="https://hoot.xiezhaoye.site/">
-  <meta property="og:image" content="https://hoot.xiezhaoye.site/assets/hoot-editor-0.2.1.jpg">
+  <meta property="og:image" content="https://hoot.xiezhaoye.site/assets/hoot-editor.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
   <script src="site.js" defer></script>
@@ -33,10 +33,10 @@
     <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> 为 macOS 原生打造 <span class="dot-divider">·</span> 免费 · MIT 开源</p>
     <h1>截下来。<br><span><span class="hero-phrase">把想说的，</span><span class="hero-phrase">说明白。</span></span></h1>
     <p class="hero-description">截图、图片浏览与编辑，放在同一个顺手的 App 里。<br class="desktop-break">从圈出一个重点，到分享一张讲得清楚的图，Hoot 都陪你完成。</p>
-    <div class="hero-actions"><a class="button primary" href="https://hoot-dl.xiezhaoye.site/Hoot-0.2.1-macos-arm64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>下载 macOS 版</a><a class="button secondary" href="https://github.com/xiezhaoye/Hoot">在 GitHub 查看 <span aria-hidden="true">↗</span></a></div>
-    <p class="compatibility">v0.2.1 预览版 <span>·</span> macOS 15+ <span>·</span> Apple Silicon</p>
+    <div class="hero-actions"><a class="button primary" href="https://hoot-dl.xiezhaoye.site/Hoot-{{VERSION}}-macos-arm64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>下载 macOS 版</a><a class="button secondary" href="https://github.com/xiezhaoye/Hoot">在 GitHub 查看 <span aria-hidden="true">↗</span></a></div>
+    <p class="compatibility">v{{VERSION}} 预览版 <span>·</span> macOS 15+ <span>·</span> Apple Silicon</p>
     <figure class="hero-product">
-      <button class="screenshot-button" data-preview="assets/hoot-editor-0.2.1.jpg" data-caption="Hoot 原生编辑界面，画布中为用户提供的标注示例" aria-label="放大查看 Hoot 编辑界面"><img class="product-image" src="assets/hoot-editor-0.2.1.jpg" width="3032" height="1872" alt="Hoot 编辑界面：标注画布与工具栏，右侧颜色、描边、填充、圆角和尺寸检查器及截图历史" fetchpriority="high"></button>
+      <button class="screenshot-button" data-preview="assets/hoot-editor.jpg" data-caption="Hoot 原生编辑界面，画布中为用户提供的标注示例" aria-label="放大查看 Hoot 编辑界面"><img class="product-image" src="assets/hoot-editor.jpg" width="3032" height="1872" alt="Hoot 编辑界面：标注画布与工具栏，右侧颜色、描边、填充、圆角和尺寸检查器及截图历史" fetchpriority="high"></button>
       <figcaption>你熟悉的 Mac 界面。截图之后，直接开始编辑。<span>点击查看大图 <span aria-hidden="true">↗</span></span></figcaption>
     </figure>
     <div class="capability-strip"><span>Swift 原生界面</span><span>本地截图历史</span><span>Vision 本地识字</span><span>快捷键随手调用</span></div>
@@ -65,7 +65,7 @@
   </section>
   <section class="story-section" id="story" data-screen-label="开发初衷"><div class="wrap story-layout"><img src="assets/logo.png" width="112" height="112" alt="Hoot 猫头鹰 Logo" loading="lazy"><div><p class="eyebrow">为什么做 Hoot</p><blockquote>“想把 Windows 上用 PicPick<br class="desktop-break">截图和编辑的顺手体验，带到 Mac。”</blockquote><p>这是 Hoot 的起点。用 Swift 和 macOS 原生框架，从截图、看图和编辑这些每天都会做的小事开始，一点点打磨自己的答案。</p><p class="author"><a href="https://github.com/xiezhaoye">xiezhaoye <span aria-hidden="true">↗</span></a><span>Hoot 作者</span></p><p class="attribution">灵感来自 <a href="https://picpick.app/" rel="noopener">PicPick</a>。Hoot 是独立开发的应用，非 PicPick 官方 macOS 版本。</p></div></div></section>
   <section class="section wrap release-overview" id="updates" data-screen-label="当前版本与常用快捷键">
-    <div><p class="eyebrow">当前公开预览版 · 0.2.1</p><h2>版本与使用说明。</h2><ul class="release-points"><li>窗口与内部模块选区，支持辅助功能边界与本机矩形识别。</li><li>截图可设置透明圆角，准备过程支持多显示器并行抓取。</li><li>粘贴区块、图形和文字持续可编辑，统一固定并保存。</li><li>保存本地编辑草稿，重启后恢复画板和可编辑对象。</li></ul><a class="release-detail" href="https://github.com/xiezhaoye/Hoot/releases/tag/v0.2.1">查看 0.2.1 更新记录 ↗</a></div>
+    <div><p class="eyebrow">当前公开预览版 · {{VERSION}}</p><h2>版本与使用说明。</h2><ul class="release-points"><li>窗口与内部模块选区，支持辅助功能边界与本机矩形识别。</li><li>截图可设置透明圆角，准备过程支持多显示器并行抓取。</li><li>粘贴区块、图形和文字持续可编辑，统一固定并保存。</li><li>保存本地编辑草稿，重启后恢复画板和可编辑对象。</li></ul><a class="release-detail" href="https://github.com/xiezhaoye/Hoot/releases/tag/v{{VERSION}}">查看 {{VERSION}} 更新记录 ↗</a></div>
     <div class="shortcut-panel"><h3>常用快捷键</h3><dl><div><dt>开始截图</dt><dd><kbd>⌃⌥A</kbd></dd></div><div><dt>钉住剪贴板图片</dt><dd><kbd>⌃⌥P</kbd></dd></div><div><dt>固定全部对象</dt><dd><kbd>⇧⌘F</kbd></dd></div><div><dt>固定全部并保存</dt><dd><kbd>⌘S</kbd></dd></div><div><dt>撤销</dt><dd><kbd>⌘Z</kbd></dd></div><div><dt>重做</dt><dd><kbd>⇧⌘Z</kbd></dd></div></dl><p>以上为默认快捷键，截图快捷键可在设置中修改。保存前的区块和标注可继续调整，固定操作也支持撤销。</p></div>
   </section>
   <section class="section wrap faq-section" data-screen-label="常见问题"><div class="section-heading"><p class="eyebrow">开始之前</p><h2>你可能想知道。</h2></div><div class="faq">
@@ -78,7 +78,7 @@
     <details><summary>图片和识别的文字会上传吗？</summary><p>截图历史保存在本地，OCR 使用本机 Apple Vision。启用你自己配置的大模型翻译时，识别后的文字会发送到该接口；API Key 存在 macOS 钥匙串中。系统本地翻译不需要该接口。</p></details>
     <details><summary>支持长截图和录屏吗？</summary><p>当前版本专注截图、图片浏览与编辑，滚动长截图、录屏和视频剪辑尚未实现。你可以在 GitHub 提出需求或参与开发。</p></details>
   </div></section>
-  <section class="download-section" id="download" data-screen-label="下载 Hoot"><div class="wrap"><img src="assets/logo.png" width="76" height="76" alt="Hoot" loading="lazy"><h2>下一张截图，<br>试试 Hoot。</h2><p>给你的 Mac，添一只会截图的小猫头鹰。</p><div class="hero-actions"><a class="button primary" href="https://hoot-dl.xiezhaoye.site/Hoot-0.2.1-macos-arm64.zip">下载 Hoot 0.2.1 <span aria-hidden="true">↓</span></a><a class="button secondary" href="https://github.com/xiezhaoye/Hoot">GitHub 项目 <span aria-hidden="true">↗</span></a></div><p class="compatibility">macOS 15+ · Apple Silicon · 免费开源</p><a class="release-notes" href="https://github.com/xiezhaoye/Hoot/releases">查看版本与更新记录 <span aria-hidden="true">↗</span></a></div></section>
+  <section class="download-section" id="download" data-screen-label="下载 Hoot"><div class="wrap"><img src="assets/logo.png" width="76" height="76" alt="Hoot" loading="lazy"><h2>下一张截图，<br>试试 Hoot。</h2><p>给你的 Mac，添一只会截图的小猫头鹰。</p><div class="hero-actions"><a class="button primary" href="https://hoot-dl.xiezhaoye.site/Hoot-{{VERSION}}-macos-arm64.zip">下载 Hoot {{VERSION}} <span aria-hidden="true">↓</span></a><a class="button secondary" href="https://github.com/xiezhaoye/Hoot">GitHub 项目 <span aria-hidden="true">↗</span></a></div><p class="compatibility">macOS 15+ · Apple Silicon · 免费开源</p><a class="release-notes" href="https://github.com/xiezhaoye/Hoot/releases">查看版本与更新记录 <span aria-hidden="true">↗</span></a></div></section>
 </main>
 <footer class="wrap footer"><a class="brand" href="#"><img src="assets/logo.png" width="26" height="26" alt=""><span>Hoot</span></a><p>由 <a href="https://www.xiezhaoye.site/">xiezhaoye</a> 开发。</p><nav aria-label="页脚导航"><a href="https://github.com/xiezhaoye/Hoot">GitHub</a><a href="https://github.com/xiezhaoye/Hoot/issues">反馈问题</a><a href="https://github.com/xiezhaoye/Hoot/blob/main/LICENSE">MIT License</a></nav></footer>
 <dialog id="image-preview" aria-label="产品截图大图"><button class="preview-close" aria-label="关闭大图">关闭 <span aria-hidden="true">×</span></button><img alt=""><p></p></dialog>

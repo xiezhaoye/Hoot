@@ -27,11 +27,11 @@ Worker 名称 `hoot-site`，域名 `hoot.xiezhaoye.site`。不修改 XMark 的 W
 
 - `index.html` / `style.css` / `site.js`：落地页，无运行时依赖与追踪脚本。
 - `assets/logo.png`：从项目原有 AppIcon.icns 导出。
-- `assets/hoot-editor-0.2.1.jpg`：使用用户提供的标注图片，在隔离历史目录中运行 Hoot 0.2.1 所得实际界面截图，显示持续编辑和保存入口。
+- `assets/hoot-editor.jpg`：使用用户提供的标注图片，在隔离历史目录中运行 Hoot 所得实际界面截图，显示持续编辑和保存入口。
 - `assets/annotation-example.png`：用户指定的产品介绍图。
 - `wrangler.jsonc`：部署配置。
 
-发布新版时更新页面中的版本号、下载 URL 和更新记录，并发布对应 GitHub Release。`dist/` 是生成目录，不入 Git。
+发布新版只需改仓库根目录的 `VERSION` 和 `CHANGELOG.md`：`index.html` 里的版本号、下载 URL、Release 链接全部是 `{{VERSION}}` 占位符，由 `build.mjs` 填入；构建会校验下载链接必须是 `hoot-dl` 域名下的当前版本包，写错直接失败。`dist/` 是生成目录，不入 Git。
 
 凭据留在系统授权存储中，不复制进仓库。CI 如需自动部署，应单独配置项目最小权限 API Token，不复用本机 OAuth。
 

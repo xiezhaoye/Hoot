@@ -4,6 +4,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 IDENTITY="${SHOTPAD_IDENTITY:-Apple Development: xiezhaoye@gmail.com (N5Y4XA8R9F)}"
+
+# 版本号的唯一来源：仓库根目录的 VERSION（第 1 行营销版本 X.Y.Z，第 2 行 build 号）。
+# 不要在这里或 Info.plist 里另写版本号——漏改会让 UpdateManager 认为“已是最新”，
+# 自动更新静默失效（见 错题本.md）。
+[ -f VERSION ] || { echo "缺少 VERSION 文件" >&2; exit 1; }
+MARKETING_VERSION="$(sed -n '1p' VERSION | tr -d '[:space:]')"
+BUILD_NUMBER="$(sed -n '2p' VERSION | tr -d '[:space:]')"
+[[ "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VERSION 第 1 行必须是 X.Y.Z：'$MARKETING_VERSION'" >&2; exit 1; }
+[[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "VERSION 第 2 行必须是整数 build 号：'$BUILD_NUMBER'" >&2; exit 1; }
+grep -q "^## ${MARKETING_VERSION}$" CHANGELOG.md \
+  || echo "提示：CHANGELOG.md 还没有 '## ${MARKETING_VERSION}' 段落，发版前补上（只增不改）" >&2
+
 swift build -c release
 APP=Hoot.app
 rm -rf "$APP"
@@ -20,8 +32,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>Hoot</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.1</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
+<key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
@@ -30,4 +42,4 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 codesign --force --sign "$IDENTITY" "$APP"
 codesign -dv "$APP" 2>&1 | grep -E "Identifier|Authority" | head -2
-echo "built $(pwd)/$APP"
+echo "built $(pwd)/$APP  ($MARKETING_VERSION / build $BUILD_NUMBER)"

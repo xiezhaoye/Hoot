@@ -50,13 +50,15 @@ open Hoot.app
 
 上面的命令使用临时签名。开发时可用 `SHOTPAD_IDENTITY` 指定自己的稳定签名证书，以保持重建后的系统录屏授权。构建脚本默认使用作者本机的开发证书。
 
+版本号唯一来源是仓库根目录的 [`VERSION`](VERSION)（第 1 行营销版本 `X.Y.Z`，第 2 行 build 号）；构建脚本与落地页都从它读取，不要手写版本号。
+
 ## 工程结构
 
 - `Sources/ShotPad`：AppKit / SwiftUI 界面、截图遮罩、画布、浏览和贴图。
 - `Sources/ShotPadCore`：标注、渲染、浮动块、撤销、历史、OCR 与翻译逻辑。
 - `Tests/ShotPadCoreTests`：核心逻辑回归测试。
 - `docs/FEATURES.md`：完整功能与交互约定。
-- `landing/`：产品落地页及 Cloudflare Workers 部署配置。
+- `landing/`：产品落地页及 Cloudflare Workers 部署配置（`index.html` 里只写 `{{VERSION}}` 占位符，构建时从 `VERSION` 填入）。
 
 应用显示名是 **Hoot**。为兼容早期版本，SwiftPM 目标 `ShotPad`、bundle ID `com.xiezhaoye.shotpad`、数据目录 `~/Library/Application Support/ShotPad/` 和钥匙串服务名 `ShotPad.LLM` 保持不变。
 
