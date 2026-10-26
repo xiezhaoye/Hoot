@@ -34,3 +34,7 @@ Worker 名称 `hoot-site`，域名 `hoot.xiezhaoye.site`。不修改 XMark 的 W
 发布新版时更新页面中的版本号、下载 URL 和更新记录，并发布对应 GitHub Release。`dist/` 是生成目录，不入 Git。
 
 凭据留在系统授权存储中，不复制进仓库。CI 如需自动部署，应单独配置项目最小权限 API Token，不复用本机 OAuth。
+
+## 页面信息同步
+
+落地页展示当前已发布的 0.2.1 功能、默认快捷键与作者主页。更新说明以 CHANGELOG 和 GitHub Release 为准，不因站点改版提升应用版本。构建会为 CSS 和 JS 生成内容哈希文件名，页面要求重新验证缓存，旧资源地址保留兼容。
