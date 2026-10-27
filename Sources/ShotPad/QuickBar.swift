@@ -23,7 +23,8 @@ private struct QuickBarView: View {
                 }
             }
             barButton("character.bubble", "翻译") { actions.translate() }
-            barButton("pencil.and.outline", "编辑") { actions.edit() }
+            Button { actions.edit(); actions.close() } label: { Label("编辑", systemImage: "pencil.and.outline").labelStyle(.titleAndIcon) }
+                .buttonStyle(.borderedProminent).controlSize(.small).help("编辑（回车）")
             Divider().frame(height: 18)
             barButton("doc.on.doc", "复制") { actions.copyImage() }
             barButton("pin", "钉住") { actions.pin() }
@@ -47,49 +48,13 @@ private final class BarPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
-private final class PreviewView: NSView {
-    let image: CGImage
-    init(image: CGImage, frame: CGRect) {
-        self.image = image
-        super.init(frame: frame)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.interpolationQuality = .high
-        ctx.saveGState()
-        ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.draw(image, in: bounds)
-        ctx.restoreGState()
-        let path = NSBezierPath(rect: bounds.insetBy(dx: 1, dy: 1))
-        path.lineWidth = 2
-        AppSettings.shared.selectionNSColor.setStroke()
-        path.stroke()
-    }
-}
-
-/// Floating bar shown under a fresh capture, with the captured area kept on screen where it was taken.
+/// Floating bar shown under the picked region while it can still be adjusted.
 @MainActor
 enum QuickBar {
     private static var panel: NSPanel?
-    private static var preview: NSPanel?
 
-    static func show(near rect: CGRect, image: CGImage, actions: QuickActions) {
+    static func show(near rect: CGRect, actions: QuickActions) {
         dismiss()
-        let pv = BarPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        pv.contentView = PreviewView(image: image, frame: CGRect(origin: .zero, size: rect.size))
-        pv.isOpaque = true
-        pv.hasShadow = true
-        pv.ignoresMouseEvents = true
-        pv.level = .floating
-        pv.isReleasedWhenClosed = false
-        pv.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        pv.setFrame(rect, display: true)
-        pv.orderFrontRegardless()
-        preview = pv
         let host = NSHostingView(rootView: QuickBarView(actions: actions))
         let size = host.fittingSize
         let p = BarPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
@@ -98,7 +63,7 @@ enum QuickBar {
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = true
-        p.level = .floating
+        p.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 1)
         p.isReleasedWhenClosed = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let screen = NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main
@@ -115,7 +80,5 @@ enum QuickBar {
     static func dismiss() {
         panel?.orderOut(nil)
         panel = nil
-        preview?.orderOut(nil)
-        preview = nil
     }
 }

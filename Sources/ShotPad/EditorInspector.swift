@@ -153,11 +153,13 @@ struct EditorInspector: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("\(tool == .mosaic || tool == .blur ? "强度" : "描边粗细")").fontWeight(.medium); Spacer(); Text("\(Int(model.lineWidth)) px").monospacedDigit() }
             Slider(value: numberBinding($model.lineWidth), in: 1...16).accessibilityLabel("线宽")
-            HStack(spacing: 5) {
+            // each preset sits right under its position on the slider track (knob travel is inset by half a knob)
+            ZStack(alignment: .topLeading) {
                 ForEach([1, 2, 3, 4, 6, 8, 12, 16], id: \.self) { width in
-                    Button("\(width)") { model.lineWidth = CGFloat(width) }.buttonStyle(.borderless)
+                    Button("\(width)") { model.lineWidth = CGFloat(width) }.buttonStyle(.borderless).monospacedDigit()
+                        .position(x: 8 + CGFloat(width - 1) / 15 * (200 - 16), y: 8)
                 }
-            }
+            }.frame(width: 200, height: 16)
         }.font(.system(size: 11)).padding(16).frame(width: 232)
     }
     private var radiusPanel: some View {

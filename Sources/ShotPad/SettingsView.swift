@@ -35,7 +35,7 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach([("通用", "slider.horizontal.3"), ("识字与翻译", "translate"), ("关于与更新", "info.circle")], id: \.0) { title, icon in
+                ForEach([("通用", "slider.horizontal.3"), ("快捷键", "keyboard"), ("识字与翻译", "translate"), ("关于与更新", "info.circle")], id: \.0) { title, icon in
                     Button { category = title } label: {
                         HStack(spacing: 10) {
                             Image(systemName: icon).resizable().scaledToFit().frame(width: 18, height: 18).frame(width: 22, height: 22)
@@ -52,11 +52,6 @@ struct SettingsView: View {
             Form {
             if category == "通用" {
             Section("截图") {
-                HStack {
-                    Text("截图快捷键")
-                    Spacer()
-                    ShortcutRecorder(settings: settings)
-                }
                 Picker("保存格式", selection: $settings.imageFormat) {
                     ForEach(ImageFormat.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -70,17 +65,17 @@ struct SettingsView: View {
                 Toggle("截图圆角", isOn: $settings.roundedCapture)
                 if settings.roundedCapture {
                     HStack {
-                        Text("圆角半径（像素）")
+                        Text("圆角半径（像素）").lineLimit(1).fixedSize()
                         Spacer()
-                        TextField("圆角半径", value: $settings.captureRadius, format: .number.precision(.fractionLength(0)))
+                        TextField("", value: $settings.captureRadius, format: .number.precision(.fractionLength(0)))
                             .frame(width: 55).multilineTextAlignment(.trailing)
                         Stepper("圆角半径", value: $settings.captureRadius, in: 0...200, step: 2).labelsHidden()
-                        Menu("预设") { ForEach([0, 4, 8, 12, 16, 24, 32, 48], id: \.self) { radius in Button("\(radius) px") { settings.captureRadius = Double(radius) } } }
+                        Menu("预设") { ForEach([0, 4, 8, 12, 16, 24, 32, 48], id: \.self) { radius in Button("\(radius) px") { settings.captureRadius = Double(radius) } } }.fixedSize()
                     }
                     Text("0 为直角；圆角区域透明，实际半径不超过截图短边的一半。PNG 可保留透明圆角，JPG 等格式会使用白底。").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Text("编辑画板大小（像素）")
+                    Text("编辑画板大小（像素）").lineLimit(1).fixedSize()
                     Spacer()
                     TextField("", value: $settings.boardWidth, format: .number.grouping(.never)).frame(width: 60).multilineTextAlignment(.trailing)
                     Text("×")
@@ -91,7 +86,7 @@ struct SettingsView: View {
                         }
                     }.fixedSize()
                 }
-                Text("宽 × 高，单位是像素（Retina 屏上 1920 像素显示为 960 点宽）。截图进入编辑时放在这块白色画板的左上角；比画板大时画板自动撑大。预设里最后一项是 A4 @300dpi。").font(.caption).foregroundStyle(.secondary)
+                Text("宽 × 高，单位是像素（Retina 屏上 1920 像素显示为 960 点宽）。截图进入编辑时居中放在这块白色画板上，可整体移动；比画板大时画板自动撑大。预设里最后一项是 A4 @300dpi。").font(.caption).foregroundStyle(.secondary)
             }
             Section("存储与格式") {
                 HStack {
@@ -113,6 +108,25 @@ struct SettingsView: View {
                 }.pickerStyle(.segmented)
                 ColorPicker("标注颜色（画笔、箭头、文字等）", selection: $settings.annotationColor)
                 ColorPicker("选区 / 裁剪框颜色", selection: $settings.selectionColor)
+            }
+            }
+            if category == "快捷键" {
+            Section("快捷键") {
+                HStack {
+                    Text("截图")
+                    Spacer()
+                    ShortcutRecorder(text: settings.captureShortcutText) { key, mods, label in
+                        settings.captureKeyLabel = label; settings.captureKeyCode = key; settings.captureModifiers = mods
+                    }
+                }
+                HStack {
+                    Text("保存")
+                    Spacer()
+                    ShortcutRecorder(text: settings.saveShortcutText) { key, mods, label in
+                        settings.saveKeyLabel = label; settings.saveKeyCode = key; settings.saveModifiers = mods
+                    }
+                }
+                Text("点击后按下新的组合键（至少包含 ⌃ ⌥ ⇧ ⌘ 之一），Esc 取消。保存会把当前画板导出为图片文件；所有内容在关闭软件时都会自动保存到历史。").font(.caption).foregroundStyle(.secondary)
             }
             }
             if category == "识字与翻译" {
@@ -211,12 +225,13 @@ enum SettingsWindow {
 
 /// Click, then press the new key combination (at least one of ⌃ ⌥ ⇧ ⌘); Esc cancels.
 struct ShortcutRecorder: View {
-    @ObservedObject var settings: AppSettings
+    let text: String
+    let onRecord: (_ keyCode: Int, _ modifiers: Int, _ label: String) -> Void
     @State private var recording = false
     @State private var monitor: Any?
 
     var body: some View {
-        Button(recording ? "请按下新的快捷键…" : settings.captureShortcutText) { toggle() }
+        Button(recording ? "请按下新的快捷键…" : text) { toggle() }
             .frame(minWidth: 130)
             .onDisappear { stop() }
     }
@@ -234,9 +249,7 @@ struct ShortcutRecorder: View {
             if f.contains(.shift) { mods |= 512 }
             if f.contains(.command) { mods |= 256 }
             guard mods != 0 else { NSSound.beep(); return nil }
-            settings.captureKeyLabel = Self.label(for: e)
-            settings.captureKeyCode = Int(e.keyCode)
-            settings.captureModifiers = mods
+            onRecord(Int(e.keyCode), mods, Self.label(for: e))
             stop()
             return nil
         }

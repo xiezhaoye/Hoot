@@ -26,15 +26,25 @@ final class CanvasView: NSView, NSTextViewDelegate {
     private var patchDrag: PatchDrag?
     private var patchDragRecorded = false
     private var selectionDrag: PatchDrag?
+    /// Edge / interior drag on a raw selection: the content is lifted into a block on the first real movement.
+    private var pendingLift: (handle: Handle?, rect: CGRect)?
     private var textField: NSTextView?
     private var editRect: CGRect = .zero         // text box while typing, image pixels
     private var editFont: CGFloat = 28
-    private var editWidthSet = false
+    private var editManualWidth: CGFloat?       // box width the user dragged to (text area, excluding padding)
+    private var editWrapWidth: CGFloat?         // set while the text is squeezed into several lines
     private enum EditDrag { case move(grab: CGPoint, origin: CGRect), resize(Handle, CGRect, font: CGFloat) }
     private var editDrag: EditDrag?
     private let textPad: CGFloat = 4
     private var editingText: Annotation?          // existing text being re-typed
-    private var selectedID: UUID? { didSet { if oldValue != selectedID { model?.documentChanged() } } }
+    private var selectedID: UUID? {
+        didSet {
+            guard oldValue != selectedID else { return }
+            // back to "drawing": the next shape uses this tool's last edited style, not the style of whatever was selected
+            if selectedID == nil, let m = model { m.restoreStyle(for: m.tool) }
+            model?.documentChanged()
+        }
+    }
     private struct AnnotationDrag {
         var handle: AnnotationHandle?
         var original: Annotation
@@ -276,11 +286,13 @@ final class CanvasView: NSView, NSTextViewDelegate {
         }
         if textField != nil {
             outline(viewRect(editRect), color: selectionColor, dashed: false)
-            drawHandles(viewRect(editRect))
+            // only the vertical sides stretch the box; top and bottom just move it
             let r = viewRect(editRect)
-            selectionColor.withAlphaComponent(0.15).setFill()
-            CGRect(x: r.minX, y: r.minY - 14, width: r.width, height: 14).fill()
-            ("拖动文字框" as NSString).draw(at: CGPoint(x: r.minX + 5, y: r.minY - 13), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: selectionColor])
+            for pt in [CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.maxX, y: r.midY)] {
+                let box = CGRect(x: pt.x - 4, y: pt.y - 4, width: 8, height: 8)
+                NSColor.white.setFill(); box.fill()
+                selectionColor.setStroke(); NSBezierPath(rect: box).stroke()
+            }
         }
         if let a = selectedAnnotation, let b = a.bounds {
             outline(viewRect(b), color: selectionColor, dashed: true)
@@ -321,14 +333,28 @@ final class CanvasView: NSView, NSTextViewDelegate {
         return NSCursor.frameResize(position: pos, directions: .all)
     }
 
+    private enum TextBoxHit { case side(Handle), move }
+    /// Left / right edges and the four corners stretch the width; the top and bottom edges (and the rim around the box) move it.
+    private func textBoxHit(_ p: CGPoint) -> TextBoxHit? {
+        let slop = 8 / zoom
+        let tall = editRect.insetBy(dx: 0, dy: -slop)
+        if tall.minY...tall.maxY ~= p.y {
+            if abs(p.x - editRect.minX) <= slop { return .side(.left) }
+            if abs(p.x - editRect.maxX) <= slop { return .side(.right) }
+        }
+        if editRect.insetBy(dx: -14 / zoom, dy: -14 / zoom).contains(p) { return .move }
+        return nil
+    }
+
     /// Cursor follows what a drag would do here: resize on a selection / block edge, move inside it.
     private func updateCursor(at viewPoint: CGPoint) {
         if textField != nil {
             let p = imagePoint(viewPoint: viewPoint)
-            let header = CGRect(x: editRect.minX, y: editRect.minY - 14 / zoom, width: editRect.width, height: 14 / zoom)
-            if header.contains(p) { NSCursor.openHand.set() }
-            else if let h = Handle.hit(in: editRect, at: p, slop: 7 / zoom) { resizeCursor(h).set() }
-            else if editRect.insetBy(dx: -14 / zoom, dy: -14 / zoom).contains(p) { NSCursor.openHand.set() }
+            switch textBoxHit(p) {
+            case .side: NSCursor.resizeLeftRight.set()
+            case .move: NSCursor.openHand.set()
+            case nil: break
+            }
             return
         }
         guard let model, let doc else { return }
@@ -338,7 +364,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
             if patch.rect.contains(p) { NSCursor.openHand.set(); return }
         } else if model.tool == .select, let s = selection {
             if let h = selectionHandle(at: p, in: s) {
-                if [.topLeft, .topRight, .bottomLeft, .bottomRight].contains(h) { resizeCursor(h).set() } else { NSCursor.openHand.set() }; return
+                resizeCursor(h).set(); return
             }
             if s.contains(p) { NSCursor.openHand.set(); return }
         }
@@ -359,13 +385,10 @@ final class CanvasView: NSView, NSTextViewDelegate {
         guard let model, let doc else { return }
         let p = imagePoint(event)
         if textField != nil {
-            let header = CGRect(x: editRect.minX, y: editRect.minY - 14 / zoom, width: editRect.width, height: 14 / zoom)
-            if header.contains(p) { editDrag = .move(grab: p, origin: editRect); dragStart = p; return }
-            if let h = Handle.allCases.first(where: { abs($0.point(in: editRect).x - p.x) <= 8 / zoom && abs($0.point(in: editRect).y - p.y) <= 8 / zoom }) {
-                editDrag = .resize(h, editRect, font: editFont); dragStart = p; return
-            }
-            if editRect.insetBy(dx: -14 / zoom, dy: -14 / zoom).contains(p) {
-                editDrag = .move(grab: p, origin: editRect); dragStart = p; return
+            switch textBoxHit(p) {
+            case .side(let h): editDrag = .resize(h, editRect, font: editFont); dragStart = p; return
+            case .move: editDrag = .move(grab: p, origin: editRect); dragStart = p; return
+            case nil: break
             }
             commitText()
         }
@@ -380,8 +403,9 @@ final class CanvasView: NSView, NSTextViewDelegate {
         if model.tool == .select, let s = selection {
             let handle = selectionHandle(at: p, in: s)
             if handle != nil || s.contains(p) {
+                // Corners resize the selection frame; edges stretch and the interior moves the selected content itself.
                 if let handle, [.topLeft, .topRight, .bottomLeft, .bottomRight].contains(handle) { selectionDrag = .resize(handle, s) }
-                else { selectionDrag = .move(grab: p, origin: s) }
+                else { pendingLift = (handle, s) }
                 dragStart = p; return
             }
         }
@@ -442,19 +466,11 @@ final class CanvasView: NSView, NSTextViewDelegate {
             switch drag {
             case .move(let grab, let origin):
                 editRect = origin.offsetBy(dx: (p.x - grab.x).rounded(), dy: (p.y - grab.y).rounded())
-            case .resize(let h, let original, let font):
-                let r = Patch.resized(original, handle: h, to: p)
-                if h == .left || h == .right {
-                    editWidthSet = true
-                    editRect = CGRect(x: r.minX, y: original.minY, width: max(40, r.width), height: original.height)
-                } else {
-                    let vertical = h == .top || h == .bottom
-                    let ratio = max(0.1, vertical ? r.height / original.height : r.width / original.width)
-                    let w = original.width * ratio, hgt = original.height * ratio
-                    editRect = CGRect(x: h.movesLeft ? original.maxX - w : original.minX,
-                                      y: h.movesTop ? original.maxY - hgt : original.minY, width: w, height: hgt)
-                    editFont = max(8, font * ratio)
-                }
+            case .resize(let h, let original, _):
+                let outer = h == .left ? original.maxX - p.x : p.x - original.minX
+                editManualWidth = max(40, outer - 2 * textPad)
+                layoutTextBox()
+                if h == .left { editRect.origin.x = original.maxX - editRect.width }
             }
             syncEditField(); syncLiveText()
             needsDisplay = true
@@ -476,6 +492,13 @@ final class CanvasView: NSView, NSTextViewDelegate {
             rememberNumber(updated)
             refresh()
             return
+        }
+        if let lift = pendingLift {
+            pendingLift = nil
+            guard doc.liftSelection(lift.rect), let block = doc.patch else { return }
+            selection = nil; selectedID = nil
+            patchDragRecorded = true       // the lift already recorded the undo step
+            if let h = lift.handle { patchDrag = .resize(h, block.rect) } else { patchDrag = .move(grab: s, origin: block.rect) }
         }
         if let drag = selectionDrag {
             switch drag {
@@ -520,9 +543,9 @@ final class CanvasView: NSView, NSTextViewDelegate {
             if let f = textField { window?.makeFirstResponder(f) }
             return
         }
-        defer { dragStart = nil; patchDrag = nil; selectionDrag = nil; annDrag = nil; editDrag = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
+        defer { dragStart = nil; patchDrag = nil; selectionDrag = nil; annDrag = nil; editDrag = nil; pendingLift = nil; draftRect = nil; draftPoints = []; needsDisplay = true }
         if annDrag != nil || editDrag != nil { return }
-        if patchDrag != nil || selectionDrag != nil { return }
+        if patchDrag != nil || selectionDrag != nil || pendingLift != nil { return }
         let point = imagePoint(event)
         let e = event.modifierFlags.contains(.shift) && (model.tool == .rect || model.tool == .ellipse)
             ? DrawingGeometry.squareEndpoint(from: s, to: point) : point
@@ -562,6 +585,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
         guard case .text(let text, let origin, let size) = a.kind else { return }
         loadStyle(from: a)
         editingText = a; selectedID = a.id; editFont = size
+        editManualWidth = a.boxWidth ?? (a.textAreaWidth > 240 ? a.textAreaWidth : nil); editWrapWidth = a.boxWidth
         doc.hiddenAnnotationID = a.id
         editRect = CGRect(x: origin.x - textPad, y: origin.y - textPad, width: a.bounds!.width + 2 * textPad, height: a.bounds!.height + 2 * textPad)
         let field = NSTextView(frame: .zero)
@@ -583,13 +607,17 @@ final class CanvasView: NSView, NSTextViewDelegate {
         // The outer border and the strip above it belong to CanvasView, so they remain draggable.
         field.frame = viewRect(editRect.insetBy(dx: textPad, dy: textPad))
         field.font = .systemFont(ofSize: editFont * zoom, weight: .medium)
+        let wrapped = editWrapWidth != nil
+        field.isHorizontallyResizable = !wrapped
+        field.textContainer?.widthTracksTextView = wrapped
+        field.textContainer?.containerSize = NSSize(width: wrapped ? field.frame.width : 10_000_000, height: 10_000_000)
     }
 
     /// Keep the document current even while its native text editor owns focus.
     private func syncLiveText() {
         guard let field = textField, var a = editingText, let doc else { return }
         a.kind = .text(field.string, origin: CGPoint(x: editRect.minX + textPad, y: editRect.minY + textPad), fontSize: editFont)
-        a.boxWidth = nil; a.textAreaWidth = max(240, editRect.width - 2 * textPad)
+        a.boxWidth = editWrapWidth; a.textAreaWidth = max(40, editRect.width - 2 * textPad)
         editingText = a; doc.replaceAnnotation(a, record: false); model?.documentChanged()
     }
 
@@ -601,14 +629,30 @@ final class CanvasView: NSView, NSTextViewDelegate {
             if field.string.isEmpty { doc.removeAnnotation(a.id); selectedID = nil }
             else { selectedID = a.id }
         }
-        editingText = nil; refresh()
+        editingText = nil; editManualWidth = nil; editWrapWidth = nil; refresh()
     }
 
     func textDidChange(_ notification: Notification) {
         guard let field = textField else { return }
-        let size = Renderer.textSize(field.string, fontSize: editFont)
-        editRect.size = CGSize(width: max(240, size.width + 16) + 2 * textPad,
-                               height: max(editFont * 1.25, size.height) + 2 * textPad)
+        layoutTextBox()
+        syncEditField(); syncLiveText(); needsDisplay = true
+    }
+
+    /// Box width follows the text (with a blank tail) until the user drags it; a dragged width keeps the text on one line
+    /// while it fits and squeezes it into several lines once it does not.
+    private func layoutTextBox() {
+        guard let field = textField else { return }
+        let natural = Renderer.textSize(field.string, fontSize: editFont).width + 16
+        var inner = max(240, natural)
+        var wrap: CGFloat?
+        if let manual = editManualWidth {
+            inner = manual
+            if natural > manual { wrap = manual }
+        }
+        let height = wrap.map { Renderer.textSize(field.string, fontSize: editFont, width: $0).height }
+            ?? Renderer.textSize(field.string, fontSize: editFont).height
+        editWrapWidth = wrap
+        editRect.size = CGSize(width: inner + 2 * textPad, height: max(editFont * 1.25, height) + 2 * textPad)
         syncEditField(); syncLiveText(); needsDisplay = true
     }
 
@@ -654,10 +698,14 @@ final class CanvasView: NSView, NSTextViewDelegate {
             else if doc.patch != nil { doc.deletePatch(); refresh() }
             else if let s = selection { doc.erase(s); selection = nil; refresh() }
             else if cropRect != nil, model?.tool == .crop { cropRect = nil; needsDisplay = true }
+        case 18, 19, 83, 84: // 1 / 2 (main row and keypad)
+            let plain = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+            if !(plain && adjustStrength(up: event.keyCode == 19 || event.keyCode == 84)) { super.keyDown(with: event) }
         case 53: // esc
             if selectedID != nil { selectedID = nil }
             else if doc.patch != nil { doc.cancelPatch(); model?.documentChanged() }
-            cropRect = nil; selection = nil; needsDisplay = true
+            cropRect = nil; selection = nil; model?.tool = .hand
+            window?.invalidateCursorRects(for: self); needsDisplay = true
         case 123, 124, 125, 126:
             guard let patch = doc.patch else { return }
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
@@ -734,6 +782,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
                 if change == .appearance { a = m.applyAppearance(to: a); textField?.alphaValue = a.opacity }
                 editingText = a; syncLiveText()
             }
+            m.rememberStyle(for: .text)
             return
         }
         guard var a = selectedAnnotation else { return }
@@ -742,6 +791,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
         case .width:
             switch a.kind {
             case .text, .number: return
+            case .mosaic(let r, _): a.kind = .mosaic(r, block: max(6, Int(m.lineWidth) * 3))
+            case .blur(let r, _): a.kind = .blur(r, radius: max(4, Double(m.lineWidth) * 3))
             default: a.lineWidth = m.lineWidth
             }
         case .font:
@@ -751,7 +802,30 @@ final class CanvasView: NSView, NSTextViewDelegate {
         }
         doc.replaceAnnotation(a, record: true)
         styleRecordedID = a.id
+        m.rememberStyle(for: Self.tool(of: a))
         rememberNumber(a); refresh()
+    }
+
+    private static func tool(of a: Annotation) -> Tool {
+        switch a.kind {
+        case .rect: .rect; case .ellipse: .ellipse; case .line: .line; case .arrow: .arrow; case .pen: .pen
+        case .highlighter: .highlighter; case .mosaic: .mosaic; case .blur: .blur; case .text, .textBox: .text; case .number: .number
+        }
+    }
+
+    /// Keys 1 / 2: thinner / thicker stroke, smaller / larger text, weaker / stronger mosaic or blur.
+    private func adjustStrength(up: Bool) -> Bool {
+        guard let m = model else { return false }
+        let target = selectedAnnotation.map(Self.tool(of:)) ?? m.tool
+        switch target {
+        case .text:
+            m.fontSize = min(200, max(8, m.fontSize + (up ? 2 : -2)))
+        case .rect, .ellipse, .line, .arrow, .pen, .highlighter, .mosaic, .blur:
+            m.lineWidth = min(16, max(1, m.lineWidth + (up ? 1 : -1)))
+        default: return false
+        }
+        m.status = target == .text ? "字号 \(Int(m.fontSize))" : (target == .mosaic || target == .blur ? "强度 \(Int(m.lineWidth))" : "描边 \(Int(m.lineWidth)) px")
+        return true
     }
 
     private func loadStyle(from a: Annotation) {
@@ -762,6 +836,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
         switch a.kind {
         case .text(_, _, let fs): m.fontSize = fs
         case .number(_, _, let diameter): m.numberDiameter = diameter
+        case .mosaic(_, let block): m.lineWidth = CGFloat(max(1, block / 3))
+        case .blur(_, let radius): m.lineWidth = CGFloat(max(1, Int(radius / 3)))
         default: m.lineWidth = a.lineWidth
         }
         suppressStyle = false

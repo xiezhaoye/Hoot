@@ -28,7 +28,7 @@ struct EditorView: View {
     @ObservedObject private var settings = AppSettings.shared
     @StateObject private var browse = BrowseModel()
     @State private var tab: SideTab = .shots
-    @State private var query = ""
+    @State private var category: HistoryGroup? = .normal
     @State private var notice = ""
     @State private var noticeTask: Task<Void, Never>?
     @State private var directionOpen = false
@@ -96,11 +96,11 @@ struct EditorView: View {
     private var titlebar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
-                EditorTrafficLights().frame(width: 88, height: 70)
-                Text("Hoot").font(.system(size: 22, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
+                EditorTrafficLights().frame(width: 88, height: 47)
+                Text("Hoot").font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
                 Spacer(minLength: 0)
             }
-            .frame(width: EditorStyle.sidebarWidth, height: 70)
+            .frame(width: EditorStyle.sidebarWidth, height: 47)
             .background(EditorStyle.sidebar)
             Divider()
             HStack(spacing: 0) {
@@ -109,7 +109,7 @@ struct EditorView: View {
                         HStack(spacing: 9) {
                             Image(systemName: "camera.viewfinder").font(.system(size: 20))
                             Text("截图").font(.system(size: 14, weight: .medium))
-                        }.padding(.horizontal, 12).frame(height: 38)
+                        }.padding(.horizontal, 12).frame(height: 30)
                             .contentShape(RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(.plain).help("截图 \(settings.captureShortcutText)").accessibilityLabel("截图")
                     EditorWindowDragArea().frame(minWidth: 6, maxWidth: .infinity, maxHeight: .infinity)
@@ -122,16 +122,16 @@ struct EditorView: View {
                         Button(action: editBrowseImage) {
                             Label("编辑图片", systemImage: "square.and.pencil")
                                 .font(.system(size: 14, weight: .semibold))
-                                .frame(maxWidth: .infinity).frame(height: 38)
+                                .frame(maxWidth: .infinity).frame(height: 30)
                         }.buttonStyle(.plain).foregroundStyle(.white)
                             .background(EditorStyle.accent, in: RoundedRectangle(cornerRadius: 7))
                             .disabled(browse.current == nil).opacity(browse.current == nil ? 0.4 : 1)
                             .help("送进编辑器，结果另存到“截图”，不改原文件（回车）")
                     }
                 }.padding(.horizontal, 12).frame(width: settings.historySide == .right ? EditorStyle.sidebarWidth : EditorStyle.inspectorWidth)
-            }.frame(maxWidth: .infinity).frame(height: 70)
+            }.frame(maxWidth: .infinity).frame(height: 47)
                 .background(EditorStyle.panel.opacity(0.7))
-        }.frame(height: 70)
+        }.frame(height: 47)
     }
     private func editBrowseImage() {
         guard let url = browse.current, let image = ImageLoader.loadFull(url) else { return }
@@ -144,10 +144,6 @@ struct EditorView: View {
             Button { model.canvas?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
                 .buttonStyle(EditorIconButtonStyle()).disabled(!model.doc.canRedo).help("重做 ⇧⌘Z").accessibilityLabel("重做")
             headerSeparator
-            Button { model.fixAll() } label: { Image(systemName: "square.stack.3d.down.right") }
-                .buttonStyle(EditorIconButtonStyle()).help("固定全部，可撤销 ⇧⌘F").accessibilityLabel("固定全部")
-                .disabled(!model.doc.hasEditableObjects)
-            Button("保存") { model.saveAs() }.buttonStyle(.borderedProminent).help("固定全部并保存 ⌘S")
             Button { model.runOCR() } label: {
                 HStack(spacing: 7) { Image(systemName: "text.viewfinder").font(.system(size: 16)); if windowWidth >= 1180 { Text("识别文字").fixedSize() } }
             }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("识别文字").help("识别选区或整张图像中的文字")
@@ -203,7 +199,7 @@ struct EditorView: View {
                     .menuStyle(.borderlessButton).frame(width: 26).help("更多标注工具")
                 }
             }
-            toolDivider; toolButton(.crop)
+            toolDivider; toolButton(.crop); fixButton
             Spacer(minLength: 0)
             Menu {
                 Button("适合窗口") { model.canvas?.zoomToFit() }
@@ -214,6 +210,17 @@ struct EditorView: View {
             } label: { Text(model.zoomFitted ? "适合窗口" : "\(model.zoomPercent)%").font(.system(size: 11)).monospacedDigit() }
             .menuStyle(.borderlessButton).fixedSize().help("缩放：捏合或 ⌘+ / ⌘-；⌘0 恢复 100%")
         }.padding(.horizontal, 16).frame(height: 46).background(.bar)
+    }
+    /// Blue while there are loose objects to fix, white once everything is fixed.
+    private var fixButton: some View {
+        let loose = model.revision >= 0 && model.doc.hasEditableObjects
+        return Button { model.fixAll() } label: {
+            Text("固定").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(loose ? Color.white : Color.primary.opacity(0.45))
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(loose ? EditorStyle.accent : Color.white, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(loose ? Color.clear : EditorStyle.separator, lineWidth: 1))
+        }.buttonStyle(.plain).disabled(!loose).help("固定全部，可撤销 ⇧⌘F").accessibilityLabel("固定")
     }
     private var toolDivider: some View { Divider().frame(height: 18) }
     private func toolGroup(_ tools: [Tool]) -> some View {
@@ -267,7 +274,7 @@ struct EditorView: View {
             }.padding(2).background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 .padding(.horizontal, 14).frame(height: 46).padding(.bottom, 12)
             switch tab {
-            case .shots: captureActions; searchField; historyList
+            case .shots: captureActions; categoryPicker; historyList
             case .browse: BrowseSidebar(model: browse)
             }
             Divider()
@@ -289,21 +296,17 @@ struct EditorView: View {
             .background(.background.opacity(0.75), in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(EditorStyle.separator, lineWidth: 0.5)).padding(.horizontal, 14)
     }
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-            TextField("搜索截图", text: $query).textFieldStyle(.plain).font(.system(size: 12))
-            if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                    .buttonStyle(.plain).accessibilityLabel("清除搜索")
-            }
-        }.padding(.horizontal, 8).frame(height: 29)
-            .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
+    private var categoryPicker: some View {
+        Picker("", selection: $category) {
+            Text("全部").tag(HistoryGroup?.none)
+            Text("编辑").tag(HistoryGroup?.some(.normal))
+            Text("翻译").tag(HistoryGroup?.some(.translate))
+            Text("文字").tag(HistoryGroup?.some(.ocr))
+        }.pickerStyle(.segmented).labelsHidden()
             .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 4)
     }
     private var filteredEntries: [HistoryEntry] {
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return model.entries.filter { text.isEmpty || "\($0.displayName) \($0.shortName) \($0.date.formatted()) \($0.width)×\($0.height)".localizedStandardContains(text) }
+        model.entries.filter { category == nil || $0.group == category }
     }
     private var days: [Date] { Array(Set(filteredEntries.map { Calendar.current.startOfDay(for: $0.date) })).sorted(by: >) }
     private func groupTitle(_ date: Date) -> String {
@@ -317,8 +320,8 @@ struct EditorView: View {
                 LazyVStack(alignment: .leading, spacing: 5) {
                     if filteredEntries.isEmpty {
                         VStack(spacing: 9) {
-                            Image(systemName: query.isEmpty ? "photo.on.rectangle" : "magnifyingglass").font(.system(size: 25, weight: .light))
-                            Text(query.isEmpty ? "截图会保存在这里" : "没有匹配的截图").font(.system(size: 12))
+                            Image(systemName: "photo.on.rectangle").font(.system(size: 25, weight: .light))
+                            Text("这个分类下还没有截图").font(.system(size: 12))
                         }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 36)
                     }
                     ForEach(days, id: \.self) { day in

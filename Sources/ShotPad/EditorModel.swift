@@ -32,7 +32,7 @@ final class EditorModel: ObservableObject {
     var restoredView: (zoom: Int, origin: CGPoint?)?
     @Published var aspectLocked = false
     @Published var sidebarVisible = true
-    @Published var inspectorVisible = true
+    @Published var inspectorVisible = false
     @Published var status = ""
     @Published var entries: [HistoryEntry] = []
     @Published var currentID: UUID?
@@ -95,9 +95,31 @@ final class EditorModel: ObservableObject {
         else { canvas?.setSelectedFrame(frame) }
     }
 
+    /// Colour, stroke and so on are remembered per tool: a red 4 px arrow and a blue 5 px rectangle can coexist.
+    struct DrawStyle {
+        var color: Color; var lineWidth: CGFloat; var fontSize: CGFloat
+        var fill: Annotation.Fill; var opacity: Double; var cornerRadius: CGFloat; var shadow: Bool
+    }
+    private var toolStyles: [Tool: DrawStyle] = [:]
+    func rememberStyle(for tool: Tool) {
+        guard tool.usesColor || tool.usesWidth else { return }
+        toolStyles[tool] = DrawStyle(color: colorValue, lineWidth: lineWidth, fontSize: fontSize, fill: fill, opacity: opacity, cornerRadius: cornerRadius, shadow: shadow)
+    }
+    func restoreStyle(for tool: Tool) {
+        guard let st = toolStyles[tool] else { return }
+        let previous = canvas?.suppressStyle ?? false
+        canvas?.suppressStyle = true
+        colorValue = st.color; lineWidth = st.lineWidth; fontSize = st.fontSize
+        fill = st.fill; opacity = st.opacity; cornerRadius = st.cornerRadius; shadow = st.shadow
+        canvas?.suppressStyle = previous
+    }
+
     func chooseTool(_ next: Tool) {
         canvas?.finishTextEditing()
-        tool = tool == next && next != .hand ? .hand : next
+        rememberStyle(for: tool)
+        let target: Tool = tool == next && next != .hand ? .hand : next
+        tool = target
+        restoreStyle(for: target)
         canvas?.needsDisplay = true
         if let canvas { canvas.window?.invalidateCursorRects(for: canvas); canvas.window?.makeFirstResponder(canvas) }
     }
@@ -147,8 +169,21 @@ final class EditorModel: ObservableObject {
         status = "已复制到剪贴板"
     }
 
+    /// Replaces the document shown in this (the only) editor window.
+    func load(doc newDoc: EditorDocument, entry: HistoryEntry?) {
+        persistCurrent()
+        doc = newDoc
+        savedURL = nil
+        currentID = entry?.id
+        entries = history.entries
+        tool = .hand
+        canvas?.reload(resetScroll: true)
+        documentChanged()
+    }
+
     func fixAll() {
         canvas?.finishTextEditing(); doc.flattenAll(); canvas?.reload(keepView: true)
+        persistCurrent()
         canvas?.window?.makeFirstResponder(canvas)
         status = "已固定全部，可用 ⌘Z 恢复编辑"
     }

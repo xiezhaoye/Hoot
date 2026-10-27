@@ -49,6 +49,14 @@ final class AppSettings: ObservableObject {
         (captureModifiers & 4096 != 0 ? "⌃" : "") + (captureModifiers & 2048 != 0 ? "⌥" : "")
             + (captureModifiers & 512 != 0 ? "⇧" : "") + (captureModifiers & 256 != 0 ? "⌘" : "") + captureKeyLabel
     }
+    /// Save shortcut (menu key equivalent), same encoding as the capture shortcut.
+    @Published var saveKeyCode: Int { didSet { d.set(saveKeyCode, forKey: "saveKeyCode") } }
+    @Published var saveModifiers: Int { didSet { d.set(saveModifiers, forKey: "saveModifiers"); (NSApp.delegate as? AppDelegate)?.updateSaveShortcut() } }
+    @Published var saveKeyLabel: String { didSet { d.set(saveKeyLabel, forKey: "saveKeyLabel"); (NSApp.delegate as? AppDelegate)?.updateSaveShortcut() } }
+    var saveShortcutText: String { Self.shortcutText(modifiers: saveModifiers, label: saveKeyLabel) }
+    static func shortcutText(modifiers m: Int, label: String) -> String {
+        (m & 4096 != 0 ? "⌃" : "") + (m & 2048 != 0 ? "⌥" : "") + (m & 512 != 0 ? "⇧" : "") + (m & 256 != 0 ? "⌘" : "") + label
+    }
     private func shortcutChanged() { (NSApp.delegate as? AppDelegate)?.registerCaptureHotKey() }
     @Published var imageFormat: ImageFormat { didSet { d.set(imageFormat.rawValue, forKey: "imageFormat") } }
     @Published var historySide: HistorySide { didSet { d.set(historySide.rawValue, forKey: "historySide") } }
@@ -78,6 +86,9 @@ final class AppSettings: ObservableObject {
         captureKeyCode = d.object(forKey: "captureKeyCode") as? Int ?? 0
         captureModifiers = d.object(forKey: "captureModifiers") as? Int ?? (4096 | 2048)
         captureKeyLabel = d.string(forKey: "captureKeyLabel") ?? "A"
+        saveKeyCode = d.object(forKey: "saveKeyCode") as? Int ?? 1
+        saveModifiers = d.object(forKey: "saveModifiers") as? Int ?? 256
+        saveKeyLabel = d.string(forKey: "saveKeyLabel") ?? "S"
         boardWidth = d.object(forKey: "boardWidth") as? Int ?? 1920
         boardHeight = d.object(forKey: "boardHeight") as? Int ?? 1080
         historySide = HistorySide(rawValue: d.string(forKey: "historySide") ?? "") ?? .right

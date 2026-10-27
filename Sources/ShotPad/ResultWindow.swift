@@ -7,8 +7,10 @@ import ShotPadCore
 @MainActor
 final class ResultModel: ObservableObject {
     @Published var title: String
-    @Published var text = ""
-    @Published var busy = true
+    @Published var text = "" { didSet { fitWindow?() } }
+    @Published var busy = true { didSet { fitWindow?() } }
+    /// Set by the window: resizes it to the current content.
+    var fitWindow: (() -> Void)?
     @Published var note = ""
     @Published var config: TranslationSession.Configuration?
     var lines: [String] = []
@@ -38,29 +40,32 @@ struct ResultView: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             ScrollView {
                 Group {
-                    if model.busy { HStack { ProgressView().controlSize(.small); Text(model.note.isEmpty ? "处理中…" : model.note).foregroundStyle(.secondary) } }
+                    if model.busy { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(model.note.isEmpty ? "处理中…" : model.note).foregroundStyle(.secondary) } }
                     else { Text(model.text.isEmpty ? "（无内容）" : model.text).textSelection(.enabled) }
                 }
-                .font(.system(size: 13))
+                .font(.system(size: 14))
+                .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
             }
-            .padding(6).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-            HStack {
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.08)))
+            HStack(spacing: 10) {
+                if !model.busy { Text(model.note).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1) }
+                Spacer()
+                Button("关闭", action: close).keyboardShortcut(.cancelAction)
                 Button("复制") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.text, forType: .string)
-                }.disabled(model.text.isEmpty)
-                if !model.busy { Text(model.note).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
-                Spacer()
-                Button("关闭", action: close).keyboardShortcut(.cancelAction)
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(model.text.isEmpty)
             }
-            .controlSize(.small)
+            .controlSize(.large)
         }
-        .padding(10)
-        .frame(width: 320, height: 190)
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .translationTask(model.config) { session in await model.runLocal(session) }
     }
 }
@@ -68,16 +73,34 @@ struct ResultView: View {
 @MainActor
 enum ResultWindow {
     private static var open: [NSPanel] = []
+    private static let width: CGFloat = 460
 
     @discardableResult
     static func show(title: String) -> ResultModel {
         let model = ResultModel(title: title)
-        let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
+        let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
         panel.title = title
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: ResultView(model: model) { panel.close() })
-        panel.setContentSize(CGSize(width: 320, height: 190))
+        panel.setContentSize(CGSize(width: width, height: 220))
+        panel.minSize = CGSize(width: 340, height: 180)
+        model.fitWindow = { [weak panel, weak model] in
+            guard let panel, let model else { return }
+            // text height at the window's width, plus the buttons / paddings around it
+            let text = model.busy || model.text.isEmpty ? "处理中…" : model.text
+            let font = NSFont.systemFont(ofSize: 14)
+            let measured = (text as NSString).boundingRect(with: CGSize(width: panel.contentLayoutRect.width - 36 - 28, height: .greatestFiniteMagnitude),
+                                                           options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font]).height
+            let lines = max(1, Int(measured / font.pointSize))
+            let content = measured + CGFloat(lines) * 3 + 28 + 18 * 2 + 14 + 40
+            let maxHeight = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+            let height = min(max(220, content), maxHeight * 0.75)
+            var frame = panel.frame
+            let target = panel.frameRect(forContentRect: CGRect(x: 0, y: 0, width: panel.contentLayoutRect.width, height: height)).height
+            frame.origin.y += frame.height - target; frame.size.height = target
+            panel.setFrame(frame, display: true, animate: true)
+        }
         let m = NSEvent.mouseLocation
         panel.setFrameTopLeftPoint(CGPoint(x: m.x + 12, y: m.y - 12))
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { _ in
