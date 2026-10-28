@@ -7,7 +7,14 @@ Hoot 是一款使用 Swift、AppKit 和 SwiftUI 开发的 macOS 原生应用，�
 
 作者希望把 Windows 上 [PicPick](https://picpick.app/) 截图与编辑的顺手体验带到 macOS，于是做了 Hoot。这是受 PicPick 启发的独立实现，并非 PicPick 的官方 macOS 版本或代码移植。
 
-![Hoot 原生截图与编辑界面](landing/assets/hoot-editor-0.2.1.jpg)
+![Hoot 原生截图与编辑界面](landing/assets/hoot-editor.jpg)
+
+<!-- landing -->
+- **截下来，直接编辑**：全局快捷键框选区域或悬停选择窗口，截完就能标注、识字、翻译或贴图。
+- **从圈出重点到分享一张讲清楚的图**：矩形、箭头、画笔、序号、马赛克、裁剪一应俱全，所有对象可再次编辑。
+- **本地优先**：截图历史与 OCR 都在本机完成；翻译只会发送到你自己配置的接口。
+
+![Hoot 标注示例](landing/assets/annotation-example.png)
 
 ## 能做什么
 
@@ -37,6 +44,17 @@ Hoot 是一款使用 Swift、AppKit 和 SwiftUI 开发的 macOS 原生应用，�
 当前安装包未经过 Apple 公证；如果系统提示无法验证开发者，可在“系统设置 → 隐私与安全性”确认应用来源后选择“仍要打开”。
 
 OCR 在本机完成。使用大模型翻译时，识别后的文字会发送到你配置的接口；API Key 存在 macOS 钥匙串中。
+
+## 常见问题
+
+**Hoot 免费吗？**  
+免费，MIT 协议开源。
+
+**第一次截图没反应？**  
+在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”允许 Hoot，然后重新打开应用。
+
+**识字和翻译会上传图片吗？**  
+不会。识字使用 Apple Vision，在本机完成；启用大模型翻译时，只有识别出的文字会发给你配置的接口。
 
 ## 从源码构建
 
