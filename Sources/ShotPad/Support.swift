@@ -31,6 +31,11 @@ extension CGImage {
 }
 
 enum Clipboard {
+    static func writePNG(_ data: Data) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(data, forType: .png)
+    }
+
     static func write(_ image: CGImage) {
         let pb = NSPasteboard.general
         pb.clearContents()

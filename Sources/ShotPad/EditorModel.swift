@@ -8,8 +8,10 @@ extension RGBA {
 
 @MainActor
 final class EditorModel: ObservableObject {
-    @Published var doc: EditorDocument
-    @Published var tool: Tool = .hand            // .hand = no tool picked: drag to pan
+    @Published var doc: EditorDocument { didSet { nextNumberAfterFix = 1 } }
+    @Published var tool: Tool = .hand {
+        didSet { if oldValue != tool { canvas?.toolDidChange(); inspectorVisible = true } }
+    }
     @Published var zoomPercent = 100
     @Published var zoomFitted = false
     @Published var colorValue: Color = AppSettings.shared.annotationColor {
@@ -17,6 +19,24 @@ final class EditorModel: ObservableObject {
     }
     @Published var lineWidth: CGFloat = 3 { didSet { canvas?.styleChanged(.width) } }
     @Published var fontSize: CGFloat = 28 { didSet { canvas?.styleChanged(.font) } }
+    @Published var fontName = UserDefaults.standard.string(forKey: "textFontName") ?? "" {
+        didSet { UserDefaults.standard.set(fontName, forKey: "textFontName"); canvas?.styleChanged(.font) }
+    }
+    @Published var cropPadding = min(100, max(0, UserDefaults.standard.integer(forKey: "cropPadding"))) {
+        didSet {
+            let clamped = min(100, max(0, cropPadding))
+            if cropPadding != clamped { cropPadding = clamped; return }
+            UserDefaults.standard.set(cropPadding, forKey: "cropPadding")
+            canvas?.updateCropPadding()
+        }
+    }
+    @Published var exportStyle: ImageExportStyle {
+        didSet { rememberExportConfiguration() }
+    }
+    @Published var exportBackground: CGImage?
+    @Published var selectedExportTemplateID: UUID
+    var exportBackgroundPNG: Data?
+    let exportTemplates: ImageExportTemplateStore
     @Published var fill: Annotation.Fill = .none { didSet { canvas?.styleChanged(.appearance) } }
     @Published var opacity: Double = 1 { didSet { canvas?.styleChanged(.appearance) } }
     @Published var cornerRadius: CGFloat = 0 { didSet { canvas?.styleChanged(.appearance) } }
@@ -32,7 +52,7 @@ final class EditorModel: ObservableObject {
     var restoredView: (zoom: Int, origin: CGPoint?)?
     @Published var aspectLocked = false
     @Published var sidebarVisible = true
-    @Published var inspectorVisible = false
+    @Published var inspectorVisible = true
     @Published var status = ""
     @Published var entries: [HistoryEntry] = []
     @Published var currentID: UUID?
@@ -42,8 +62,16 @@ final class EditorModel: ObservableObject {
 
     let history: HistoryStore
     weak var canvas: CanvasView?
+    private var nextNumberAfterFix = 1
+    var nextNumber: Int { max(nextNumberAfterFix, doc.nextNumber()) }
 
-    init(image: CGImage, history: HistoryStore, entry: HistoryEntry?) {
+    init(image: CGImage, history: HistoryStore, entry: HistoryEntry?, exportTemplates: ImageExportTemplateStore? = nil) {
+        let exportTemplates = exportTemplates ?? .shared
+        self.exportTemplates = exportTemplates
+        self.exportStyle = exportTemplates.workingStyle
+        self.exportBackgroundPNG = exportTemplates.workingBackgroundPNG
+        self.exportBackground = ImageExportTemplateStore.image(from: exportBackgroundPNG)
+        self.selectedExportTemplateID = exportTemplates.workingTemplateID
         self.doc = entry.flatMap { DraftStore.load($0.id) } ?? EditorDocument(image: image)
         self.history = history
         self.currentID = entry?.id
@@ -75,6 +103,7 @@ final class EditorModel: ObservableObject {
     func applyAppearance(to annotation: Annotation) -> Annotation {
         var result = annotation
         result.fill = fill; result.opacity = opacity; result.cornerRadius = cornerRadius; result.shadow = shadow
+        if case .text = result.kind { result.fontName = fontName.isEmpty ? nil : fontName }
         return result
     }
 
@@ -97,28 +126,40 @@ final class EditorModel: ObservableObject {
 
     /// Colour, stroke and so on are remembered per tool: a red 4 px arrow and a blue 5 px rectangle can coexist.
     struct DrawStyle {
-        var color: Color; var lineWidth: CGFloat; var fontSize: CGFloat
+        var color: Color; var lineWidth: CGFloat; var fontSize: CGFloat; var fontName: String
         var fill: Annotation.Fill; var opacity: Double; var cornerRadius: CGFloat; var shadow: Bool
     }
     private var toolStyles: [Tool: DrawStyle] = [:]
     func rememberStyle(for tool: Tool) {
         guard tool.usesColor || tool.usesWidth else { return }
-        toolStyles[tool] = DrawStyle(color: colorValue, lineWidth: lineWidth, fontSize: fontSize, fill: fill, opacity: opacity, cornerRadius: cornerRadius, shadow: shadow)
+        toolStyles[tool] = DrawStyle(color: colorValue, lineWidth: lineWidth, fontSize: fontSize, fontName: fontName, fill: fill, opacity: opacity, cornerRadius: cornerRadius, shadow: shadow)
     }
     func restoreStyle(for tool: Tool) {
         guard let st = toolStyles[tool] else { return }
         let previous = canvas?.suppressStyle ?? false
         canvas?.suppressStyle = true
-        colorValue = st.color; lineWidth = st.lineWidth; fontSize = st.fontSize
+        colorValue = st.color; lineWidth = st.lineWidth; fontSize = st.fontSize; fontName = st.fontName
         fill = st.fill; opacity = st.opacity; cornerRadius = st.cornerRadius; shadow = st.shadow
         canvas?.suppressStyle = previous
     }
 
+    /// Fix the current drawing and floating blocks when the user clicks outside or chooses another tool.
+    func autoFixObjects() {
+        guard doc.hasEditableObjects else { return }
+        canvas?.finishTextEditing()
+        nextNumberAfterFix = nextNumber
+        doc.flattenAll(); canvas?.reload(keepView: true)
+        persistCurrent()
+        status = "已自动固定，⌘Z 可恢复"
+    }
+
     func chooseTool(_ next: Tool) {
         canvas?.finishTextEditing()
+        autoFixObjects()
         rememberStyle(for: tool)
         let target: Tool = tool == next && next != .hand ? .hand : next
         tool = target
+        inspectorVisible = true
         restoreStyle(for: target)
         canvas?.needsDisplay = true
         if let canvas { canvas.window?.invalidateCursorRects(for: canvas); canvas.window?.makeFirstResponder(canvas) }
@@ -219,6 +260,8 @@ final class EditorModel: ObservableObject {
            let region = doc.composite(includeEditing: true).cropping(to: s.integral.intersection(doc.bounds)) { return region }
         return full
     }
+
+    func openLink() { TextTools.openLink(recognitionTarget()) { [weak self] ok in self?.status = ok ? "已在浏览器打开" : "没有发现网址" } }
 
     func runOCR() { TextTools.showOCR(recognitionTarget()) }
 

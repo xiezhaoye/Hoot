@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import Vision
 
-public struct RecognizedLine {
+public struct RecognizedLine: Sendable {
     public var text: String
     /// Image pixels, top-left origin.
     public var rect: CGRect
@@ -32,6 +32,42 @@ public enum TextRecognizer {
     }
 
     public static func fullText(_ lines: [RecognizedLine]) -> String { lines.map(\.text).joined(separator: "\n") }
+
+    /// OCR long images at their original resolution, with overlapping strips so line boundaries stay readable.
+    /// Called on a worker task; cancellation is checked between Vision requests.
+    public static func recognizeForReflow(_ image: CGImage) throws -> [RecognizedLine] {
+        var lines: [RecognizedLine] = []
+        for tile in reflowTiles(width: image.width, height: image.height) {
+            try Task.checkCancellation()
+            guard let crop = image.cropping(to: tile.rect) else { continue }
+            let found = try recognize(crop)
+            try Task.checkCancellation()
+            lines += found.compactMap { line in
+                let global = line.rect.offsetBy(dx: 0, dy: tile.rect.minY)
+                guard global.midY >= tile.ownedRange.lowerBound, global.midY < tile.ownedRange.upperBound else { return nil }
+                return RecognizedLine(text: line.text, rect: global)
+            }
+        }
+        return lines
+    }
+
+    public struct ReflowTile {
+        public var rect: CGRect
+        public var ownedRange: Range<CGFloat>
+    }
+    public static func reflowTiles(width: Int, height: Int) -> [ReflowTile] {
+        guard width > 0, height > 0 else { return [] }
+        let tileHeight = max(1200, min(3200, width * 2)), overlap = 128
+        var tiles: [ReflowTile] = [], top = 0
+        while top < height {
+            let bottom = min(height, top + tileHeight)
+            tiles.append(ReflowTile(rect: CGRect(x: 0, y: top, width: width, height: bottom - top),
+                ownedRange: CGFloat(top == 0 ? 0 : top + overlap / 2)..<CGFloat(bottom == height ? height : bottom - overlap / 2)))
+            if bottom == height { break }
+            top = bottom - overlap
+        }
+        return tiles
+    }
 
     /// True when most letters/ideographs are Chinese — used to pick a default translation direction.
     public static func isMostlyChinese(_ text: String) -> Bool {

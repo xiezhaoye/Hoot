@@ -38,6 +38,10 @@ final class AppSettings: ObservableObject {
     @Published var roundedCapture: Bool { didSet { d.set(roundedCapture, forKey: "roundedCapture") } }
     @Published var captureRadius: Double { didSet { d.set(captureRadius, forKey: "captureRadius") } }
     @Published var copyAfterCapture: Bool { didSet { d.set(copyAfterCapture, forKey: "copyAfterCapture") } }
+    /// Show the shot in the main window after any quick action (默认关闭).
+    @Published var openMainAfterCapture: Bool { didSet { d.set(openMainAfterCapture, forKey: "openMainAfterCapture") } }
+    /// Open the main window when the app starts (默认开启).
+    @Published var openMainOnLaunch: Bool { didSet { d.set(openMainOnLaunch, forKey: "openMainOnLaunch") } }
     @Published var boardWidth: Int { didSet { d.set(boardWidth, forKey: "boardWidth") } }
     @Published var boardHeight: Int { didSet { d.set(boardHeight, forKey: "boardHeight") } }
     var boardSize: CGSize { CGSize(width: max(boardWidth, 200), height: max(boardHeight, 200)) }
@@ -82,6 +86,8 @@ final class AppSettings: ObservableObject {
         roundedCapture = d.bool(forKey: "roundedCapture")
         captureRadius = d.object(forKey: "captureRadius") as? Double ?? 12
         copyAfterCapture = d.bool(forKey: "copyAfterCapture")
+        openMainAfterCapture = d.bool(forKey: "openMainAfterCapture")
+        openMainOnLaunch = d.object(forKey: "openMainOnLaunch") as? Bool ?? true
         imageFormat = d.string(forKey: "imageFormat").flatMap(ImageFormat.init(rawValue:)) ?? .png
         captureKeyCode = d.object(forKey: "captureKeyCode") as? Int ?? 0
         captureModifiers = d.object(forKey: "captureModifiers") as? Int ?? (4096 | 2048)

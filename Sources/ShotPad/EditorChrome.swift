@@ -71,36 +71,12 @@ extension Tool {
         switch self {
         case .hand: "拖动画布以移动，捏合以缩放"
         case .select: "框选区域后复制、粘贴或拖动移动"
-        case .crop: "拖动框选裁剪区域，按回车确认"
-        case .text: "点击输入文字，回车换行，拖动边框移动"
+        case .crop: "拖动控制点调整裁剪范围，回车裁剪并复制"
+        case .text: "点击输入文字，拖四角缩放字号，拖两侧调整宽度"
         case .number: "点击添加序号，拖动手柄调整大小"
         case .pen, .highlighter: "按住并拖动，自由绘制\(title)"
         case .mosaic, .blur: "拖动框选需要\(title)处理的区域"
         default: "拖动绘制\(title)，点击已有标注可再次编辑"
-        }
-    }
-}
-
-struct EditorShareButton: NSViewRepresentable {
-    let image: () -> CGImage
-    func makeCoordinator() -> Coordinator { Coordinator(image: image) }
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(image: NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "分享")!, target: context.coordinator, action: #selector(Coordinator.share(_:)))
-        button.isBordered = false; button.imagePosition = .imageOnly; button.toolTip = "分享图像"
-        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
-        button.contentTintColor = .secondaryLabelColor
-        button.setAccessibilityLabel("分享图像")
-        return button
-    }
-    func updateNSView(_ button: NSButton, context: Context) { context.coordinator.image = image }
-    @MainActor final class Coordinator: NSObject {
-        var image: () -> CGImage
-        private var picker: NSSharingServicePicker?
-        init(image: @escaping () -> CGImage) { self.image = image }
-        @objc func share(_ sender: NSButton) {
-            let picker = NSSharingServicePicker(items: [NSImage(cgImage: image(), size: .zero)])
-            self.picker = picker
-            picker.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         }
     }
 }

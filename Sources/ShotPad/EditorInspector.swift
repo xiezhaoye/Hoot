@@ -49,9 +49,16 @@ struct EditorInspector: View {
                     else if tool.usesColor || tool == .mosaic || tool == .blur { styleSection }
                     else if tool == .select || tool == .crop { selectionSection }
                     else { imageSection }
-                    if model.selectionFrame != nil || [.rect, .ellipse, .line, .arrow, .text, .number].contains(tool) { geometrySection }
+                    if tool == .select || tool == .crop { ImageExportInspector(model: model).padding(18) }
+                    if model.canEditFrame || [.rect, .ellipse, .line, .arrow, .text, .number].contains(tool) { geometrySection }
                     if !model.hasPatch && [.rect, .ellipse, .line, .arrow, .text, .number].contains(tool) { arrangementSection }
                     else if tool != .hand { hint(tool.hint) }
+                    InspectorSection("编辑") {
+                        Button { model.fixAll() } label: {
+                            Label("固定", systemImage: "checkmark.seal").frame(maxWidth: .infinity)
+                        }.buttonStyle(.borderedProminent).controlSize(.small)
+                            .disabled(!model.doc.hasEditableObjects).help("固定全部，可用 ⌘Z 撤销（⇧⌘F）")
+                    }
                 }
             }.scrollIndicators(.hidden)
             Divider()
@@ -103,6 +110,20 @@ struct EditorInspector: View {
                 }
             }
             if tool == .text {
+                property("字体") {
+                    Menu {
+                        Button("系统字体") { model.fontName = "" }
+                        Divider()
+                        ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { family in
+                            Button(family) {
+                                model.fontName = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: model.fontSize)?.fontName ?? family
+                            }
+                        }
+                    } label: {
+                        Text(model.fontName.isEmpty ? "系统字体" : Renderer.textFont(name: model.fontName, size: 12).familyName ?? model.fontName)
+                            .lineLimit(1).truncationMode(.middle).frame(maxWidth: 125, alignment: .trailing)
+                    }.menuStyle(.borderlessButton).help("选择字体").accessibilityLabel("字体")
+                }
                 property("字号") {
                     HStack(spacing: 5) {
                         Menu("\(Int(model.fontSize))") {
@@ -259,16 +280,28 @@ struct EditorInspector: View {
     private var selectionSection: some View {
         InspectorSection(tool == .crop ? "裁剪" : "选区") {
             ColorPicker("选区框颜色", selection: $settings.selectionColor).font(.system(size: 11))
-            if tool == .select {
-                Button { model.canvas?.copySelection() } label: { InspectorWell { Label("复制选区", systemImage: "square.on.square").font(.system(size: 11)).frame(maxWidth: .infinity) } }
-                    .buttonStyle(.plain).disabled(model.canvas?.selectionRect == nil)
+            if let rect = model.exportRegion {
+                property("区域尺寸") { Text("\(Int(rect.width)) × \(Int(rect.height)) px").monospacedDigit() }
+            }
+            if tool == .crop {
+                property("预留边距") {
+                    HStack(spacing: 3) {
+                        TextField("预留像素", value: $model.cropPadding, format: .number)
+                            .textFieldStyle(.roundedBorder).frame(width: 42).multilineTextAlignment(.trailing)
+                            .onSubmit { model.canvas?.confirmCrop() }
+                        Text("px").foregroundStyle(.secondary)
+                        Stepper("预留边距", value: $model.cropPadding, in: 0...100).labelsHidden()
+                    }.controlSize(.small)
+                }
+                Text("四边预留 0～100 像素，自动记住设置").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Button("确认裁剪并复制 ↩") { model.canvas?.confirmCrop() }
+                    .buttonStyle(.bordered).controlSize(.small).disabled(model.canvas?.activeSelectionRect == nil)
             }
         }
     }
     private var patchSection: some View {
         InspectorSection("局部覆盖") {
-            Text("拖动移动，拖手柄调整尺寸。历史区块仍可选中；保存或固定全部时统一合并。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
-            Button("固定全部") { model.fixAll() }.buttonStyle(.borderedProminent).controlSize(.small)
+            Text("拖动内部移动，拖控制点缩放。点击外部或切换工具后固定。").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
             Button("删除区块") { model.canvas?.cancelPatch() }.controlSize(.small)
         }
     }

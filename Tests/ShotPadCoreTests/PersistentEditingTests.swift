@@ -31,6 +31,15 @@ final class PersistentEditingTests: XCTestCase {
         XCTAssertEqual(doc.patches[0].id, block)
         doc.redo(); XCTAssertFalse(doc.hasEditableObjects)
     }
+    func testFlattenPatchesKeepsAnnotationsEditable() {
+        let doc = EditorDocument(image: solid(100, 100, .white))
+        doc.add(Annotation(.rect(CGRect(x: 5, y: 5, width: 10, height: 10))))
+        doc.paste(solid(10, 10, .black), centeredAt: CGPoint(x: 80, y: 80))
+        doc.flattenPatches()
+        XCTAssertTrue(doc.patches.isEmpty); XCTAssertEqual(doc.state.annotations.count, 1)
+        XCTAssertEqual(pixel(doc.state.base, 80, 80).0, 0)          // the block is part of the board now
+        doc.undo(); XCTAssertEqual(doc.patches.count, 1)
+    }
     func testFlattenIncludesOutlyingPatchesAndUndoKeepsCoordinates() {
         let doc = EditorDocument(image: solid(20, 20, .white))
         doc.beginPatch(image: solid(10, 10, .black), rect: CGRect(x: -10, y: -5, width: 10, height: 10))

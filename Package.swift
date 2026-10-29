@@ -8,6 +8,7 @@ let package = Package(
         .target(name: "ShotPadCore", path: "Sources/ShotPadCore"),
         .executableTarget(name: "ShotPad", dependencies: ["ShotPadCore"], path: "Sources/ShotPad"),
         .testTarget(name: "ShotPadCoreTests", dependencies: ["ShotPadCore"], path: "Tests/ShotPadCoreTests"),
+        .testTarget(name: "ShotPadInteractionTests", dependencies: ["ShotPad"], path: "Tests/ShotPadInteractionTests"),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -120,8 +120,25 @@ enum TextTools {
     }
 
     /// Returns the recognised text (empty when none).
+    /// QR payloads come first, then the printed text.
     static func extractText(_ image: CGImage) async throws -> String {
-        TextRecognizer.fullText(try await recognize(image))
+        let qr = await Task.detached(priority: .userInitiated) { LinkDetector.qrPayloads(image) }.value
+        let printed = TextRecognizer.fullText(try await recognize(image))
+        return (qr + (printed.isEmpty ? [] : [printed])).joined(separator: "\n")
+    }
+
+    /// A QR code's link wins over printed text.
+    static func findURL(_ image: CGImage) async -> URL? {
+        let qr = await Task.detached(priority: .userInitiated) { LinkDetector.qrPayloads(image) }.value
+        if let url = qr.lazy.compactMap({ LinkDetector.firstURL(in: $0) }).first { return url }
+        guard let text = try? await extractText(image) else { return nil }
+        return LinkDetector.firstURL(in: text)
+    }
+
+    static func openLink(_ image: CGImage, done: @escaping (Bool) -> Void) {
+        Task { @MainActor in
+            if let url = await findURL(image) { NSWorkspace.shared.open(url); done(true) } else { NSSound.beep(); done(false) }
+        }
     }
 
     static func showOCR(_ image: CGImage, done: ((Bool) -> Void)? = nil) {

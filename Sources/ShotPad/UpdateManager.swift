@@ -87,10 +87,10 @@ final class UpdateManager: ObservableObject {
               /bin/sleep 1
             done
             if kill -0 "$parent" 2>/dev/null; then exit 1; fi
-            /usr/bin/codesign --verify --deep --strict -R 'anchor apple generic and identifier "com.xiezhaoye.shotpad" and certificate leaf[subject.OU] = "KPMNP43ZN8"' "$source_app"
+            /usr/bin/codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.xiezhaoye.shotpad" and certificate leaf[subject.OU] = "KPMNP43ZN8"' "$source_app"
             next="${target}.update-$$"; backup="${target}.previous-$$"
             /usr/bin/ditto "$source_app" "$next"
-            /usr/bin/codesign --verify --deep --strict -R 'anchor apple generic and identifier "com.xiezhaoye.shotpad" and certificate leaf[subject.OU] = "KPMNP43ZN8"' "$next"
+            /usr/bin/codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.xiezhaoye.shotpad" and certificate leaf[subject.OU] = "KPMNP43ZN8"' "$next"
             /bin/mv "$target" "$backup"
             if ! /bin/mv "$next" "$target"; then /bin/mv "$backup" "$target"; exit 1; fi
             if ! /usr/bin/open "$target"; then

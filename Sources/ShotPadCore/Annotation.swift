@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-public struct RGBA: Equatable, Codable {
+public struct RGBA: Equatable, Codable, Sendable {
     public var r, g, b, a: Double
     public init(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) { self.r = r; self.g = g; self.b = b; self.a = a }
     public var cgColor: CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
@@ -38,6 +38,10 @@ public struct Annotation: Identifiable, Codable {
     public var lineWidth: CGFloat
     /// Wrap width for `.text`; nil means one unwrapped line.
     public var boxWidth: CGFloat?
+    /// PostScript font name; nil keeps the system font used by older drafts.
+    public var fontName: String?
+    /// Explicit user-set text width. Nil lets the box grow as the user types.
+    public var textFixedWidth: CGFloat?
     /// Transparent interaction area, independent of glyph width and wrapping.
     public var textAreaWidth: CGFloat = 240
     /// Optional appearance controls. Defaults preserve the original renderer exactly.

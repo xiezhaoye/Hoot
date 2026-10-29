@@ -31,6 +31,19 @@ public final class EditorDocument {
     /// Exports the complete board, expanding white paper around outlying blocks.
     public func flattened() -> CGImage { flattenedState().base }
     public func copyRegion(_ rect: CGRect) -> CGImage? { composite().cropping(to: rect.integral.clamped(to: bounds)) }
+    /// Render a region without changing the document, including content parked outside the board.
+    public func image(in rect: CGRect) -> CGImage? {
+        let c = expandedContents(), extent = renderingExtent
+        let image = c.annotations.isEmpty && c.blocks.isEmpty ? c.base : Renderer.render(base: c.base, annotations: c.annotations, patches: c.blocks, order: state.order)
+        return ImageRegion.extract(image, rect: rect.offsetBy(dx: -extent.minX, dy: -extent.minY))
+    }
+
+    public func contentBounds() -> CGRect {
+        let c = expandedContents()
+        let rendered = Renderer.render(base: c.base, annotations: c.annotations, patches: c.blocks, order: state.order)
+        let extent = renderingExtent
+        return ImageRegion.contentBounds(in: rendered)?.offsetBy(dx: extent.minX, dy: extent.minY) ?? bounds
+    }
     public func record() { undoStack.append(state); redoStack.removeAll() }
     public func add(_ annotation: Annotation) { record(); state.annotations.append(annotation); state.order.append(annotation.id) }
     public func add(_ annotations: [Annotation]) { guard !annotations.isEmpty else { return }; record(); state.annotations += annotations; state.order += annotations.map(\.id) }
@@ -74,9 +87,9 @@ public final class EditorDocument {
         }
     }
     public func nextNumber() -> Int { (state.annotations.compactMap { a -> Int? in if case .number(let n, _, _) = a.kind { return n }; return nil }.max() ?? 0) + 1 }
-    public func crop(to rect: CGRect) {
-        let r = rect.integral.clamped(to: bounds)
-        guard r.width >= 1, r.height >= 1, let image = state.base.cropping(to: r) else { return }
+    @discardableResult public func crop(to rect: CGRect) -> Bool {
+        let r = rect.integral
+        guard let image = ImageRegion.extract(state.base, rect: r) else { return false }
         record(); state.base = image
         let delta = CGSize(width: -r.minX, height: -r.minY)
         state.annotations = state.annotations.map { var a = $0; a.move(by: delta); return a }
@@ -95,6 +108,7 @@ public final class EditorDocument {
         }
         let ids = Set(state.annotations.map(\.id) + state.patches.map(\.id)); state.order.removeAll { !ids.contains($0) }
         selectedPatchID = nil
+        return true
     }
     public func beginPatch(image: CGImage, rect: CGRect) {
         record(); let p = Patch(image: image, rect: rect); state.patches.append(p); state.order.append(p.id); selectedPatchID = p.id
@@ -123,13 +137,30 @@ public final class EditorDocument {
             a.hit(point, slop: slop) && (state.order.firstIndex(of: a.id) ?? 0) > index
         }
     }
-    private func flattenedState() -> State {
-        let target = patches.reduce(bounds) { $0.union($1.rect.integral) }.integral
+    /// Board expanded to hold every floating block, with annotations and blocks moved to match.
+    private var renderingExtent: CGRect {
+        patches.reduce(bounds) { $0.union($1.rect.integral) }.integral
+    }
+    private func expandedContents() -> (base: CGImage, annotations: [Annotation], blocks: [Patch]) {
+        let target = renderingExtent
         let shift = CGSize(width: -target.minX, height: -target.minY)
         let base = target == bounds ? state.base : Self.expand(state.base, to: target.size, shifted: CGPoint(x: shift.width, y: shift.height))
         let annotations = state.annotations.map { var a = $0; a.move(by: shift); return a }
         let blocks = patches.map { p -> Patch in var p = p; p.rect = p.rect.offsetBy(dx: shift.width, dy: shift.height); p.vacated = p.vacated?.offsetBy(dx: shift.width, dy: shift.height); return p }
-        return State(base: Renderer.render(base: base, annotations: annotations, patches: blocks, order: state.order), annotations: [])
+        return (base, annotations, blocks)
+    }
+    private func flattenedState() -> State {
+        let c = expandedContents()
+        return State(base: Renderer.render(base: c.base, annotations: c.annotations, patches: c.blocks, order: state.order), annotations: [])
+    }
+    /// Bakes only the floating blocks into the board; annotations stay editable.
+    public func flattenPatches() {
+        guard !patches.isEmpty else { return }
+        let c = expandedContents()
+        let blockIDs = Set(c.blocks.map(\.id))
+        let base = Renderer.render(base: c.base, annotations: [], patches: c.blocks, order: state.order.filter { blockIDs.contains($0) })
+        let order = state.order.filter { !blockIDs.contains($0) }
+        record(); state = State(base: base, annotations: c.annotations, patches: [], order: order); selectedPatchID = nil
     }
     public func flattenAll() { guard hasEditableObjects else { return }; let result = flattenedState(); record(); state = result; selectedPatchID = nil }
     /// Compatibility entry point: explicit commit now fixes all objects together.

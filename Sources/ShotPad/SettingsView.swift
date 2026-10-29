@@ -56,6 +56,8 @@ struct SettingsView: View {
                     ForEach(ImageFormat.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 Toggle("截图后自动复制到剪贴板", isOn: $settings.copyAfterCapture)
+                Toggle("截图后弹出主窗口", isOn: $settings.openMainAfterCapture)
+                Text("关闭时，复制、识别、翻译、钉住等操作不打开主窗口，也不留下历史文件；只有点「编辑」或按回车进入主窗口的截图才会保存到历史。").font(.caption).foregroundStyle(.secondary)
                 Toggle("智能识别窗口内部模块", isOn: $settings.smartCapture)
                 Text("悬停选择控件、面板或窗口，滚轮 / Tab 切换范围；随时可拖动框选。未授权时使用本机图像识别，授权辅助功能后可更准确地识别其他 App 的控件。").font(.caption).foregroundStyle(.secondary)
                 Button("授权辅助功能…") {
@@ -102,6 +104,7 @@ struct SettingsView: View {
             }
             Section("界面") {
                 Toggle("始终在 Dock 显示", isOn: $settings.alwaysInDock)
+                Toggle("首次打开时弹出主窗口", isOn: $settings.openMainOnLaunch)
                 Picker("历史栏位置", selection: $settings.historySide) {
                     Text("左侧").tag(AppSettings.HistorySide.left)
                     Text("右侧").tag(AppSettings.HistorySide.right)

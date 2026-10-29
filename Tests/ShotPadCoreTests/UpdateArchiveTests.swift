@@ -19,7 +19,8 @@ final class UpdateArchiveTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let zip = URL(fileURLWithPath: path)
         let digest = "sha256:" + SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
-        let app = try UpdateArchive.prepare(zip: zip, directory: dir, digest: digest, expectedVersion: "0.1.0")
+        let version = ProcessInfo.processInfo.environment["HOOT_UPDATE_TEST_VERSION"] ?? "0.1.0"
+        let app = try UpdateArchive.prepare(zip: zip, directory: dir, digest: digest, expectedVersion: version)
         XCTAssertEqual(Bundle(url: app)?.bundleIdentifier, "com.xiezhaoye.shotpad")
         XCTAssertThrowsError(try UpdateArchive.prepare(zip: zip, directory: dir, digest: digest, expectedVersion: "99.0.0"))
     }

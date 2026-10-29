@@ -203,14 +203,15 @@ final class EditingTests: XCTestCase {
         XCTAssertFalse(line.hit(CGPoint(x: 50, y: 20), slop: 3))
     }
 
-    func testTextCornerScalesFontAndSideKeepsUnwrapped() {
+    func testTextCornerScalesFontAndSideSetsWrapWidth() {
         let t = Annotation(.text("Hello world", origin: CGPoint(x: 10, y: 10), fontSize: 20))
         let b = t.bounds!
         let grown = t.dragged(.box(.bottomRight), to: CGPoint(x: b.minX + b.width * 2, y: b.maxY * 2))
         if case .text(_, _, let size) = grown.kind { XCTAssertEqual(size, 40, accuracy: 0.5) } else { XCTFail() }
         let wrapped = t.dragged(.box(.right), to: CGPoint(x: b.minX + 40, y: 0))
-        XCTAssertNil(wrapped.boxWidth)
-        XCTAssertGreaterThanOrEqual(wrapped.textAreaWidth, 240)
+        XCTAssertEqual(wrapped.boxWidth, 40)
+        XCTAssertEqual(wrapped.textFixedWidth, 40)
+        XCTAssertEqual(wrapped.textAreaWidth, 40)
         if case .text(_, _, let size) = wrapped.kind { XCTAssertEqual(size, 20) } else { XCTFail() }
     }
 }
@@ -314,7 +315,9 @@ final class BoardTests: XCTestCase {
 
     func testBoardGrowsForLargeShot() {
         let b = Board.make(placing: solid(800, 600), size: CGSize(width: 400, height: 300))
-        XCTAssertEqual(b.width, 800); XCTAssertEqual(b.height, 600)
+        XCTAssertEqual(b.width, 960); XCTAssertEqual(b.height, 720)   // shot + 20 % margin
+        let mixed = Board.size(for: CGSize(width: 500, height: 100), default: CGSize(width: 400, height: 300))
+        XCTAssertEqual(mixed.width, 600); XCTAssertEqual(mixed.height, 300)
     }
 }
 

@@ -39,8 +39,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     /// A board holds the shot floating in its middle (selected, movable as one piece); otherwise the entry's draft or plain image.
     static func makeDocument(shot: CGImage, entry: HistoryEntry?, board: Bool) -> EditorDocument {
         guard board else { return entry.flatMap { DraftStore.load($0.id) } ?? EditorDocument(image: shot) }
-        let size = AppSettings.shared.boardSize
-        let blank = Board.blank(size: CGSize(width: max(size.width, CGFloat(shot.width)), height: max(size.height, CGFloat(shot.height)))) ?? shot
+        let size = Board.size(for: CGSize(width: shot.width, height: shot.height), default: AppSettings.shared.boardSize)
+        let blank = Board.blank(size: size) ?? shot
         let doc = EditorDocument(image: blank)
         doc.paste(shot, centeredAt: CGPoint(x: CGFloat(blank.width) / 2, y: CGFloat(blank.height) / 2))
         return doc
@@ -87,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Hoot")
         statusItem.menu = makeMenu()
+        PinWindow.onEdit = { [weak self] image in
+            guard let self, let entry = self.saveToHistory(CaptureResult(image: image, screenRect: .zero)) else { return }
+            self.openEditor(image: image, entry: entry, board: true)
+        }
         registerCaptureHotKey()
         HotKey.register(keyCode: 35, modifiers: 4096 | 2048, id: 2) { [weak self] in self?.pinClipboard() } // ⌃⌥P
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
@@ -121,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do { try controller.model.checkpoint(); DraftStore.close(session.id); restored = true }
             catch { controller.model.status = "恢复成功，但草稿暂时无法写入"; restored = true }
         }
-        if !restored && editors.isEmpty { openMain() }
+        if !restored && editors.isEmpty && AppSettings.shared.openMainOnLaunch { openMain() }
         UpdateManager.shared.start()
     }
 
@@ -262,30 +266,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editors.forEach { $0.model.entries = history.entries }
     }
 
-    /// Ends the capture overlay and files the shot under the group of the action the user picked.
-    @discardableResult
-    private func finishCapture(_ result: CaptureResult, group: HistoryGroup) -> HistoryEntry? {
+    /// Ends the capture overlay. A shot only enters the history when it goes to the editor; copying, pinning,
+    /// text extraction and translation leave no file behind (unless the main window is set to open after every capture).
+    private func finishCapture(_ result: CaptureResult, copyingImage: Bool = true) {
         CaptureOverlay.shared.end()
         QuickBar.dismiss()
-        let entry = history.add(result.image, group: group, format: AppSettings.shared.imageFormat)
+        if copyingImage && AppSettings.shared.copyAfterCapture { Clipboard.write(result.image) }
+        if AppSettings.shared.openMainAfterCapture, let entry = saveToHistory(result) { openEditor(image: result.image, entry: entry) }
+    }
+
+    /// Files the shot in the history (the "编辑" path: edit button or Return).
+    private func saveToHistory(_ result: CaptureResult) -> HistoryEntry? {
+        let entry = history.add(result.image, format: AppSettings.shared.imageFormat)
         historyChanged()
-        if AppSettings.shared.copyAfterCapture { Clipboard.write(result.image) }
         return entry
     }
 
     private func showQuickBar(for result: CaptureResult) {
         let image = result.image
+        // what the user drew on the region so far is part of the shot from here on
+        let current = { CaptureResult(image: CaptureOverlay.shared.annotatedImage() ?? image, screenRect: CaptureOverlay.shared.selectedScreenRect ?? result.screenRect) }
         let edit = { [weak self] in
-            guard let self, let entry = self.finishCapture(result, group: .normal) else { return }
-            self.openEditor(image: image, entry: entry, board: true)
+            let shot = current()
+            guard let self else { return }
+            CaptureOverlay.shared.end(); QuickBar.dismiss()
+            if AppSettings.shared.copyAfterCapture { Clipboard.write(shot.image) }
+            guard let entry = self.saveToHistory(shot) else { return }
+            self.openEditor(image: shot.image, entry: entry, board: true)
         }
         pendingEdit = edit
         let actions = QuickActions(
             copyText: { [weak self] report in
-                self?.finishCapture(result, group: .ocr)
+                let shot = current()
+                self?.finishCapture(shot)
                 Task { @MainActor in
                     do {
-                        let text = try await TextTools.extractText(image)
+                        let text = try await TextTools.extractText(shot.image)
                         if text.isEmpty { report("没有识别到文字"); return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
@@ -293,15 +309,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     } catch { report("识别失败") }
                 }
             },
+            openURL: { [weak self] report in
+                let shot = current()
+                self?.finishCapture(shot)
+                Task { @MainActor in
+                    if let url = await TextTools.findURL(shot.image) { NSWorkspace.shared.open(url); report("已打开") }
+                    else { report("没有发现网址"); NSSound.beep() }
+                }
+            },
             translate: { [weak self] in
-                self?.finishCapture(result, group: .translate)
-                TextTools.showTranslation(image, toChinese: nil) { _ in }
+                let shot = current()
+                self?.finishCapture(shot)
+                TextTools.showTranslation(shot.image, toChinese: nil) { _ in }
             },
             edit: edit,
-            copyImage: { [weak self] in self?.finishCapture(result, group: .normal); Clipboard.write(image) },
-            pin: { [weak self] in self?.finishCapture(result, group: .normal); PinWindow.show(image) },
-            close: { CaptureOverlay.shared.end() })
-        QuickBar.show(near: result.screenRect, actions: actions)
+            copyImage: { [weak self] in let shot = current(); self?.finishCapture(shot); Clipboard.write(shot.image) },
+            shareImage: {
+                let shot = current()
+                if CaptureOverlay.shared.isShowingSharedResult {
+                    Clipboard.write(shot.image); return true
+                }
+                guard let rendered = ImageExportTemplateStore.shared.renderDefault(shot.image),
+                      CaptureOverlay.shared.showSharedResult(rendered) else { return false }
+                Clipboard.write(rendered); return true
+            },
+            shareForPhone: { progress in
+                let shot = current()
+                let template = ImageExportTemplateStore.shared.library.defaultTemplate
+                let output = try await MobileImageSharing.shared.prepare(shot.image, template: template, progress: progress)
+                try Task.checkCancellation()
+                guard CaptureOverlay.shared.showSharedResult(output.image) else { throw CancellationError() }
+                Clipboard.writePNG(output.png)
+            },
+            pin: { [weak self] in let shot = current(); self?.finishCapture(shot); PinWindow.show(shot.image) },
+            close: { CaptureOverlay.shared.end() }, dismissAfterShare: false)
+        QuickBar.show(near: result.screenRect, actions: actions, tools: CaptureOverlay.shared.tools)
     }
 
     func capture() {

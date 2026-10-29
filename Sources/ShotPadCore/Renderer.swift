@@ -83,7 +83,7 @@ public enum Renderer {
                 drawImage(ctx, out, in: r.integral.clamped(to: CGRect(x: 0, y: 0, width: snap.width, height: snap.height)))
             }
         case .text(let s, let origin, let size):
-            drawText(ctx, s, at: origin, font: .systemFont(ofSize: size, weight: .medium), color: a.color, width: a.boxWidth)
+            drawText(ctx, s, at: origin, font: textFont(name: a.fontName, size: size), color: a.color, width: a.boxWidth)
         case .number(let n, let c, let d):
             let r = CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
             ctx.fillEllipse(in: r)
@@ -148,14 +148,18 @@ public enum Renderer {
     }
 
     /// Size the text occupies at `fontSize`, wrapped to `width` when given.
-    public static func textSize(_ s: String, fontSize: CGFloat, width: CGFloat? = nil) -> CGSize {
-        let str = NSAttributedString(string: s, attributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .medium)])
+    public static func textFont(name: String?, size: CGFloat) -> NSFont {
+        name.flatMap { NSFont(name: $0, size: size) } ?? .systemFont(ofSize: size, weight: .medium)
+    }
+
+    public static func textSize(_ s: String, fontSize: CGFloat, width: CGFloat? = nil, fontName: String? = nil) -> CGSize {
+        let font = textFont(name: fontName, size: fontSize)
+        let str = NSAttributedString(string: s, attributes: [.font: font])
         if let width {
             let r = str.boundingRect(with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin])
             return CGSize(width: width, height: ceil(r.height))
         }
         let lines = s.components(separatedBy: "\n")
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
         let widest = lines.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }.max() ?? 0
         return CGSize(width: ceil(widest), height: lineHeight * CGFloat(max(1, lines.count)))

@@ -6,6 +6,11 @@ public enum AnnotationHandle: Equatable {
     case start, end
 }
 
+public enum AnnotationEditHit: Equatable {
+    case handle(AnnotationHandle)
+    case move
+}
+
 /// Hit-testing, moving and resizing for annotations that stay editable after being drawn.
 public extension Annotation {
     var isEditable: Bool {
@@ -22,7 +27,7 @@ public extension Annotation {
         case .rect(let r), .ellipse(let r): return r.insetBy(dx: -t, dy: -t)
         case .line(let p, let q), .arrow(let p, let q): return CGRect.spanning(p, q).insetBy(dx: -t, dy: -t)
         case .text(let s, let o, let size):
-            let natural = Renderer.textSize(s, fontSize: size, width: boxWidth)
+            let natural = Renderer.textSize(s, fontSize: size, width: boxWidth, fontName: fontName)
             return CGRect(origin: o, size: CGSize(width: max(textAreaWidth, natural.width), height: max(size * 1.25, natural.height)))
         case .pen(let points), .highlighter(let points):
             guard let first = points.first else { return nil }
@@ -47,6 +52,12 @@ public extension Annotation {
 
     func handle(at p: CGPoint, slop: CGFloat) -> AnnotationHandle? {
         handles.first { abs($0.1.x - p.x) <= slop && abs($0.1.y - p.y) <= slop }?.0
+    }
+
+    /// The active selection owns its entire bounding box, including empty space between strokes.
+    func editingHit(at p: CGPoint, slop: CGFloat) -> AnnotationEditHit? {
+        if let handle = handle(at: p, slop: slop) { return .handle(handle) }
+        return bounds?.contains(p) == true ? .move : nil
     }
 
     /// True when `p` lands on the drawn shape (the stroke, not the empty inside of an outline).
@@ -123,7 +134,7 @@ public extension Annotation {
             if case .pen = kind { result.kind = .pen(transformed) } else { result.kind = .highlighter(transformed) }
         case .text(let text, _, let size):
             let font = max(8, size * frame.height / max(1, old.height))
-            if abs(frame.width - old.width) > 0.001 { result.textAreaWidth = frame.width; result.boxWidth = nil }
+            if abs(frame.width - old.width) > 0.001 { result.textAreaWidth = frame.width; result.textFixedWidth = frame.width; result.boxWidth = frame.width }
             result.kind = .text(text, origin: frame.origin, fontSize: font)
         case .number(let number, _, _):
             let diameter = max(12, min(frame.width, frame.height))
@@ -157,7 +168,7 @@ public extension Annotation {
             if edgeSideways {
                 // side handles re-wrap the text without changing the font size
                 let r = Patch.resized(b, handle: h, to: point)
-                a.textAreaWidth = max(240, r.width); a.boxWidth = nil
+                a.textAreaWidth = max(40, r.width); a.textFixedWidth = a.textAreaWidth; a.boxWidth = a.textAreaWidth
                 a.kind = .text(s, origin: CGPoint(x: r.minX, y: b.minY), fontSize: size)
             } else {
                 let r = Patch.resized(b, handle: h, to: point)
@@ -167,7 +178,8 @@ public extension Annotation {
                 let newSize = max(8, size * ratio)
                 let o2 = CGPoint(x: h.movesLeft ? anchor.x - b.width * ratio : b.minX,
                                  y: h.movesTop ? anchor.y - b.height * ratio : b.minY)
-                a.textAreaWidth = max(240, textAreaWidth * ratio); a.boxWidth = nil
+                a.textAreaWidth = max(40, textAreaWidth * ratio)
+                a.textFixedWidth = textFixedWidth.map { $0 * ratio }; a.boxWidth = boxWidth.map { $0 * ratio }
                 a.kind = .text(s, origin: o2, fontSize: newSize)
             }
         default: break

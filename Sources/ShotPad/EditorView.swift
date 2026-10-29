@@ -28,7 +28,6 @@ struct EditorView: View {
     @ObservedObject private var settings = AppSettings.shared
     @StateObject private var browse = BrowseModel()
     @State private var tab: SideTab = .shots
-    @State private var category: HistoryGroup? = .normal
     @State private var notice = ""
     @State private var noticeTask: Task<Void, Never>?
     @State private var directionOpen = false
@@ -147,6 +146,9 @@ struct EditorView: View {
             Button { model.runOCR() } label: {
                 HStack(spacing: 7) { Image(systemName: "text.viewfinder").font(.system(size: 16)); if windowWidth >= 1180 { Text("识别文字").fixedSize() } }
             }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("识别文字").help("识别选区或整张图像中的文字")
+            Button { model.openLink() } label: {
+                HStack(spacing: 7) { Image(systemName: "safari").font(.system(size: 16)); if windowWidth >= 1180 { Text("访问 URL").fixedSize() } }
+            }.buttonStyle(EditorHeaderButtonStyle()).accessibilityLabel("访问 URL").help("打开选区或整张图像中的网址 / 二维码链接")
             HStack(spacing: 0) {
                 Button { model.translate() } label: {
                     HStack(spacing: 6) { Image(systemName: "translate").font(.system(size: 16)); if windowWidth >= 1180 { Text("翻译").fixedSize() } }
@@ -169,7 +171,8 @@ struct EditorView: View {
         HStack(spacing: 6) {
             Button { model.copyAll() } label: { Image(systemName: "square.on.square") }
                 .buttonStyle(EditorIconButtonStyle()).help("复制整张图像").accessibilityLabel("复制图像")
-            EditorShareButton { model.canvas?.finishTextEditing(); return model.doc.flattened() }.frame(width: 32, height: 32)
+            Button { model.saveAs() } label: { Image(systemName: "square.and.arrow.down") }
+                .buttonStyle(EditorIconButtonStyle()).help("保存图片").accessibilityLabel("保存图片")
             Spacer(minLength: 24)
             Button { model.inspectorVisible.toggle() } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(EditorIconButtonStyle())
@@ -199,7 +202,7 @@ struct EditorView: View {
                     .menuStyle(.borderlessButton).frame(width: 26).help("更多标注工具")
                 }
             }
-            toolDivider; toolButton(.crop); fixButton
+            toolDivider; toolButton(.crop)
             Spacer(minLength: 0)
             Menu {
                 Button("适合窗口") { model.canvas?.zoomToFit() }
@@ -210,17 +213,6 @@ struct EditorView: View {
             } label: { Text(model.zoomFitted ? "适合窗口" : "\(model.zoomPercent)%").font(.system(size: 11)).monospacedDigit() }
             .menuStyle(.borderlessButton).fixedSize().help("缩放：捏合或 ⌘+ / ⌘-；⌘0 恢复 100%")
         }.padding(.horizontal, 16).frame(height: 46).background(.bar)
-    }
-    /// Blue while there are loose objects to fix, white once everything is fixed.
-    private var fixButton: some View {
-        let loose = model.revision >= 0 && model.doc.hasEditableObjects
-        return Button { model.fixAll() } label: {
-            Text("固定").font(.system(size: 12, weight: .medium))
-                .foregroundStyle(loose ? Color.white : Color.primary.opacity(0.45))
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(loose ? EditorStyle.accent : Color.white, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(loose ? Color.clear : EditorStyle.separator, lineWidth: 1))
-        }.buttonStyle(.plain).disabled(!loose).help("固定全部，可撤销 ⇧⌘F").accessibilityLabel("固定")
     }
     private var toolDivider: some View { Divider().frame(height: 18) }
     private func toolGroup(_ tools: [Tool]) -> some View {
@@ -274,7 +266,7 @@ struct EditorView: View {
             }.padding(2).background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 .padding(.horizontal, 14).frame(height: 46).padding(.bottom, 12)
             switch tab {
-            case .shots: captureActions; categoryPicker; historyList
+            case .shots: captureActions; historyList
             case .browse: BrowseSidebar(model: browse)
             }
             Divider()
@@ -296,18 +288,8 @@ struct EditorView: View {
             .background(.background.opacity(0.75), in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(EditorStyle.separator, lineWidth: 0.5)).padding(.horizontal, 14)
     }
-    private var categoryPicker: some View {
-        Picker("", selection: $category) {
-            Text("全部").tag(HistoryGroup?.none)
-            Text("编辑").tag(HistoryGroup?.some(.normal))
-            Text("翻译").tag(HistoryGroup?.some(.translate))
-            Text("文字").tag(HistoryGroup?.some(.ocr))
-        }.pickerStyle(.segmented).labelsHidden()
-            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 4)
-    }
-    private var filteredEntries: [HistoryEntry] {
-        model.entries.filter { category == nil || $0.group == category }
-    }
+    /// Only shots that went to the editor are listed; records from the old text / translation categories stay hidden.
+    private var filteredEntries: [HistoryEntry] { model.entries.filter { $0.group == .normal } }
     private var days: [Date] { Array(Set(filteredEntries.map { Calendar.current.startOfDay(for: $0.date) })).sorted(by: >) }
     private func groupTitle(_ date: Date) -> String {
         if Calendar.current.isDateInToday(date) { return "今天" }
