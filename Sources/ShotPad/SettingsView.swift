@@ -187,7 +187,7 @@ struct SettingsView: View {
                     if let notes = updater.available?.body { Text(notes).font(.caption).textSelection(.enabled) }
                 }
             }
-            }.formStyle(.columns).padding(.horizontal, 30).padding(.bottom, 20).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.formStyle(.grouped).padding(.bottom, 20).frame(maxWidth: .infinity, maxHeight: .infinity)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(Color(nsColor: .windowBackgroundColor))
         }.frame(width: 820, height: 680)
