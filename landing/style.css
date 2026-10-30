@@ -9,3 +9,15 @@
 
 /* The supplied horizontal brand artwork includes its own wordmark. */
 .brand img.brand-wordmark{width:140px;height:44px;object-fit:contain;border-radius:0}.footer .brand img.brand-wordmark{width:105px;height:34px}@media(max-width:640px){.brand img.brand-wordmark{width:112px;height:36px}}
+
+.product-demos { padding-top: 100px; padding-bottom: 100px; }
+.demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: stretch; }
+.demo-grid article { min-width: 0; padding: 24px; border: 1px solid rgba(30,40,60,.09); border-radius: 20px; background: #f6f7f9; }
+.demo-grid img { display: block; max-width: 100%; width: 100%; height: auto; border-radius: 10px; }
+.demo-grid h3 { margin: 20px 0 8px; font-size: 21px; }
+.demo-grid p { color: #626976; line-height: 1.65; margin: 0 0 10px; }
+.demo-phone { display: flex; gap: 22px; align-items: center; }
+.demo-phone img { width: 44%; box-shadow: 0 12px 28px rgba(26,45,75,.12); }
+.demo-phone h3 { margin-top: 0; }
+.demo-copy { display: flex; flex-direction: column; justify-content: center; }
+@media (max-width: 760px) { .product-demos { padding-top: 60px; padding-bottom: 60px; } .demo-grid { grid-template-columns: 1fr; } .demo-phone { align-items: flex-start; } }

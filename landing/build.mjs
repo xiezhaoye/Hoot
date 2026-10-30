@@ -14,7 +14,7 @@ const rawHtml = readFileSync(join(root, "index.html"), "utf8");
 const html = rawHtml.replaceAll("{{VERSION}}", version);
 if (html.includes("{{")) throw new Error("index.html 里还有未替换的 {{占位符}}");
 
-for (const required of ["assets/logo.png", "assets/hoot-editor.jpg", "assets/annotation-example.png", "https://github.com/xiezhaoye/Hoot"]) {
+for (const required of ["assets/logo.png", "assets/editor-demo.png", "assets/annotation-example.png", "https://github.com/xiezhaoye/Hoot"]) {
   if (!html.includes(required)) throw new Error(`Missing page asset or project link: ${required}`);
 }
 // 下载按钮必须是 R2 域名 + 当前版本的包名：GitHub 直连在国内不稳定，也只该作为备份。

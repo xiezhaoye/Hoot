@@ -1,20 +1,31 @@
 <p align="center"><img src="landing/assets/logo.png" width="96" alt="Hoot 猫头鹰 Logo"></p>
 <h1 align="center">Hoot</h1>
 <p align="center">截图、图片浏览与编辑，在 Mac 上一气呵成。</p>
-<p align="center"><a href="https://hoot.xiezhaoye.site">产品主页</a> · <a href="https://github.com/xiezhaoye/Hoot/releases/latest">下载 macOS 版</a> · <a href="https://github.com/xiezhaoye/Hoot/issues">反馈问题</a> · <a href="LICENSE">MIT License</a></p>
+<p align="center"><a href="https://hoot.xiezhaoye.site">产品主页</a> · <a href="https://hoot-dl.xiezhaoye.site/Hoot-0.2.5-macos-arm64.zip">下载 macOS 版</a> · <a href="https://github.com/xiezhaoye/Hoot/issues">反馈问题</a> · <a href="LICENSE">MIT License</a></p>
 
 Hoot 是一款使用 Swift、AppKit 和 SwiftUI 开发的 macOS 原生应用，集截图、图片浏览与编辑于一体。
 
 作者希望把 Windows 上 [PicPick](https://picpick.app/) 截图与编辑的顺手体验带到 macOS，于是做了 Hoot。这是受 PicPick 启发的独立实现，并非 PicPick 的官方 macOS 版本或代码移植。
 
-![Hoot 原生截图与编辑界面](landing/assets/hoot-editor.jpg)
+## 从截图到分享
 
-<!-- landing -->
-- **截下来，直接编辑**：全局快捷键框选区域或悬停选择窗口，截完就能标注、识字、翻译或贴图。
-- **从圈出重点到分享一张讲清楚的图**：矩形、箭头、画笔、序号、马赛克、裁剪一应俱全，所有对象可再次编辑。
-- **本地优先**：截图历史与 OCR 都在本机完成；翻译只会发送到你自己配置的接口。
+**选区、复制、粘贴和编辑，一气呵成。** 截图后直接标注，选区和粘贴的区块都可以继续移动、缩放和调整。
 
-![Hoot 标注示例](landing/assets/annotation-example.png)
+![使用虚构周报演示 Hoot 选区与图片输出设置](landing/assets/selection-demo.png)
+
+**让图片更适合分享。** 选好区域后，可调整背景、留白、圆角和阴影并复制或保存；“适配手机”会识别文字、重新排版为高度随内容变化的竖版图片。本期手机排版只处理文字，不保留截图中的图片、表格和代码。
+
+<img src="landing/assets/mobile-demo.png" width="480" alt="使用虚构周报生成的手机文字图片示例">
+
+**截图之外，也能浏览和编辑图片。** 按文件夹浏览本地图片，选中后送进编辑器，保留原文件。
+
+![Hoot 编辑虚构周报](landing/assets/editor-demo.png)
+
+![Hoot 浏览虚构的示例图片](landing/assets/browse-demo.png)
+
+**取字、翻译与打开链接。** 选择截图区域即可识别文字、翻译，或读取二维码和文字中的 URL 并打开。OCR 在本机完成；使用自行配置的大模型翻译时，识别出的文字会发送到该服务。
+
+![Hoot 本地文字识别结果示例](landing/assets/ocr-demo.png)
 
 ## 能做什么
 
@@ -23,7 +34,8 @@ Hoot 是一款使用 Swift、AppKit 和 SwiftUI 开发的 macOS 原生应用，�
 - **精确调整**：可编辑标注的颜色、线宽、填充、不透明度、圆角、阴影、尺寸、位置与排列；文字支持换行和再次编辑。
 - **局部覆盖**：多次复制/粘贴形成独立可编辑区块，随时移动、缩放；固定全部或 ⌘S 保存时统一合并，⌘Z 可撤销固定。
 - **图片浏览**：按分组管理本地文件夹，单图与缩略图网格，左右翻页、键盘浏览，一键送入编辑器，保留原文件。
-- **本地文字识别**：使用 Apple Vision 识别中英文。翻译可使用自行配置的大模型接口，失败或未配置时回退系统本地翻译。
+- **文字、二维码与链接**：使用 Apple Vision 识别中英文、提取二维码内容；识别到 URL 时可直接打开。翻译可使用自行配置的大模型接口，失败或未配置时回退系统本地翻译。
+- **图片美化与手机排版**：通过模板设置背景、留白、圆角和阴影；截图浮层可将文字重新排版为适合手机阅读的图片。
 - **悬浮贴图**：`⌃⌥P` 钉住剪贴板图片，支持拖动、缩放和透明度。
 - **文字编辑**：短文字保留宽点击区域，输入框可移动；回车换行，无自动折行，编辑中可实时改色、字号和透明度。
 - **更新与恢复**：设置中检查更新、查看版本和项目链接；重启恢复所有画板与可编辑对象。

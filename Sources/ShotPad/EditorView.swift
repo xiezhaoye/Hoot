@@ -32,6 +32,8 @@ struct EditorView: View {
     @State private var noticeTask: Task<Void, Never>?
     @State private var directionOpen = false
     @State private var windowWidth: CGFloat = 1400
+    @Namespace private var tabHighlight
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,8 +50,15 @@ struct EditorView: View {
             if settings.historySide == .left { historyPane; Divider() }
             GeometryReader { geometry in
             ZStack {
-                editor.opacity(tab == .shots ? 1 : 0).allowsHitTesting(tab == .shots)
-                if tab == .browse { BrowseDetail(model: browse, onEdit: editFromBrowse) }
+                editor.opacity(tab == .shots ? 1 : 0)
+                    .offset(x: reduceMotion ? 0 : (tab == .shots ? 0 : -24))
+                    .allowsHitTesting(tab == .shots)
+                    .accessibilityHidden(tab != .shots)
+                BrowseDetail(model: browse, onEdit: editFromBrowse)
+                    .opacity(tab == .browse ? 1 : 0)
+                    .offset(x: reduceMotion ? 0 : (tab == .browse ? 0 : 24))
+                    .allowsHitTesting(tab == .browse)
+                    .accessibilityHidden(tab != .browse)
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
             }
             if settings.historySide == .right { Divider(); historyPane }
@@ -96,19 +105,9 @@ struct EditorView: View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
                 EditorTrafficLights().frame(width: 88, height: 47)
-                if let brand = EditorStyle.brandLockup {
-                    Image(nsImage: brand).renderingMode(.template)
-                        .resizable().scaledToFit()
-                        .frame(width: 72, height: 22)
-                        .foregroundStyle(.primary)
-                        .accessibilityLabel("Hoot")
-                } else {
-                    Text("Hoot").font(.system(size: 15, weight: .semibold))
-                }
                 Spacer(minLength: 0)
             }
             .frame(width: EditorStyle.sidebarWidth, height: 47)
-            .background(EditorStyle.sidebar)
             Divider()
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
@@ -130,15 +129,15 @@ struct EditorView: View {
                             Label("编辑图片", systemImage: "square.and.pencil")
                                 .font(.system(size: 14, weight: .semibold))
                                 .frame(maxWidth: .infinity).frame(height: 30)
-                        }.buttonStyle(.plain).foregroundStyle(.white)
-                            .background(EditorStyle.accent, in: RoundedRectangle(cornerRadius: 7))
+                        }.buttonStyle(.plain).foregroundStyle(.secondary)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
                             .disabled(browse.current == nil).opacity(browse.current == nil ? 0.4 : 1)
                             .help("送进编辑器，结果另存到“截图”，不改原文件（回车）")
                     }
                 }.padding(.horizontal, 12).frame(width: settings.historySide == .right ? EditorStyle.sidebarWidth : EditorStyle.inspectorWidth)
             }.frame(maxWidth: .infinity).frame(height: 47)
-                .background(EditorStyle.panel.opacity(0.7))
         }.frame(height: 47)
+            .background(EditorMaterial(material: .titlebar))
     }
     private func editBrowseImage() {
         guard let url = browse.current, let image = ImageLoader.loadFull(url) else { return }
@@ -263,12 +262,20 @@ struct EditorView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(SideTab.allCases, id: \.self) { item in
-                    Button { tab = item } label: {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { tab = item }
+                    } label: {
                         Text(item.rawValue).font(.system(size: 12, weight: tab == item ? .medium : .regular))
                             .foregroundStyle(tab == item ? Color.primary.opacity(0.82) : .secondary)
                             .frame(maxWidth: .infinity).frame(height: 36)
-                            .background(tab == item ? EditorStyle.well : .clear, in: RoundedRectangle(cornerRadius: 5))
-                            .shadow(color: .black.opacity(tab == item ? 0.12 : 0), radius: 1.5, y: 1)
+                            .contentShape(Rectangle())
+                            .background {
+                                if tab == item {
+                                    RoundedRectangle(cornerRadius: 5).fill(EditorStyle.well)
+                                        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+                                        .matchedGeometryEffect(id: "tab", in: tabHighlight)
+                                }
+                            }
                     }.buttonStyle(.plain).accessibilityLabel(item.rawValue).accessibilityAddTraits(tab == item ? .isSelected : [])
                 }
             }.padding(2).background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
@@ -284,7 +291,7 @@ struct EditorView: View {
                 Button { SettingsWindow.show() } label: { Image(systemName: "gearshape") }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("设置 ⌘,").accessibilityLabel("设置")
             }.padding(.horizontal, 16).frame(height: EditorStyle.footerHeight)
-        }.frame(width: EditorStyle.sidebarWidth).background(EditorMaterial().overlay(EditorStyle.sidebar.opacity(0.88)))
+        }.frame(width: EditorStyle.sidebarWidth).background(EditorMaterial().overlay(EditorStyle.sidebar.opacity(0.42)))
     }
     private var captureActions: some View {
         Button { model.newBlank() } label: {
@@ -346,7 +353,7 @@ private struct HistoryThumb: View {
                         Image(decorative: thumb, scale: 1).resizable().scaledToFit()
                     } else { Image(systemName: "photo").foregroundStyle(.tertiary) }
                 }.frame(height: 104).clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? EditorStyle.accent : EditorStyle.separator, lineWidth: selected ? 1.5 : 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? EditorStyle.accent.opacity(0.65) : EditorStyle.separator, lineWidth: selected ? 1 : 0.5))
                     .shadow(color: .black.opacity(0.07), radius: 2, y: 1)
                 HStack(spacing: 4) {
                     Text(entry.shortName).font(.system(size: 12, weight: .medium)).lineLimit(1); Spacer(minLength: 0)
@@ -354,7 +361,7 @@ private struct HistoryThumb: View {
                 }.foregroundStyle(selected ? EditorStyle.accent : Color.primary.opacity(0.7))
                 if selected { Text("\(entry.width) × \(entry.height) · \(entry.formatLabel)").font(.system(size: 10)).foregroundStyle(.secondary) }
             }.padding(9).contentShape(RoundedRectangle(cornerRadius: 8))
-                .background(selected ? EditorStyle.accent.opacity(0.12) : Color.primary.opacity(hovering ? 0.04 : 0), in: RoundedRectangle(cornerRadius: 8))
+                .background(selected ? EditorStyle.accent.opacity(0.08) : Color.primary.opacity(hovering ? 0.04 : 0), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? EditorStyle.accent.opacity(0.12) : .clear, lineWidth: 1))
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel("\(entry.shortName)，\(entry.date.formatted())").accessibilityAddTraits(selected ? .isSelected : [])

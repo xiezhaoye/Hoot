@@ -33,12 +33,12 @@ struct ImageExportInspector: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             VStack(spacing: 8) {
                 Button { model.copyRegionImage() } label: {
-                    Label("复制图片", systemImage: "square.on.square").frame(maxWidth: .infinity)
+                    Label("复制图片", systemImage: "square.on.square").font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity, minHeight: 32)
                 }.buttonStyle(.borderedProminent)
                 Button { model.saveRegionImage() } label: {
-                    Label("保存图片", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
+                    Label("保存图片", systemImage: "square.and.arrow.down").font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity, minHeight: 32)
                 }.buttonStyle(.bordered)
-            }.controlSize(.small).disabled(!model.canExportRegion || (model.exportStyle.background == .image && model.exportBackground == nil))
+            }.controlSize(.regular).disabled(!model.canExportRegion || (model.exportStyle.background == .image && model.exportBackground == nil))
             Picker("背景", selection: Binding(get: { model.exportStyle.background }, set: { value in
                 if value == .image && model.exportBackground == nil { model.chooseExportBackground() }
                 else { model.exportStyle.background = value }

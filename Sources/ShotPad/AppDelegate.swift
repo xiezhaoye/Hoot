@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let history = HistoryStore(directory: Settings.historyDirectory, limit: Settings.historyLimit)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if let image = Bundle.main.image(forResource: "logo") {
+        if let image = Bundle.main.image(forResource: "dock-icon") {
             NSApp.applicationIconImage = image
             NSApp.dockTile.contentView = HootDockIcon(image: image)
             NSApp.dockTile.display()
@@ -202,7 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem)
         let app = NSMenu()
-        app.addItem(item("截图", #selector(captureAction)))
+        let capture = item("截图", #selector(captureAction))
+        capture.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "截图")
+        app.addItem(capture)
         let prefs = item("设置…", #selector(openSettings)); prefs.keyEquivalent = ","
         app.addItem(prefs)
         app.addItem(.separator())
@@ -231,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         let cap = item("截图  \(AppSettings.shared.captureShortcutText)", #selector(captureAction))
+        cap.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "截图")
         captureItem = cap
         menu.addItem(cap)
         menu.addItem(item("钉住剪贴板  ⌃⌥P", #selector(pinAction)))

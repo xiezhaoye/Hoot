@@ -22,6 +22,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/logo.png "$APP/Contents/Resources/logo.png"
+cp Resources/dock-icon.png "$APP/Contents/Resources/dock-icon.png"
 cp Resources/brand-lockup.pdf "$APP/Contents/Resources/brand-lockup.pdf"
 cp .build/release/ShotPad "$APP/Contents/MacOS/Hoot"
 cat > "$APP/Contents/Info.plist" <<PLIST

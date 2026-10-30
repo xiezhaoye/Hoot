@@ -5,7 +5,7 @@ struct InspectorWell<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
-        content.padding(.horizontal, 8).frame(height: 26)
+        content.padding(.horizontal, 8).frame(minHeight: 32)
             .background(EditorStyle.well, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorStyle.separator, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.025), radius: 1, y: 1)

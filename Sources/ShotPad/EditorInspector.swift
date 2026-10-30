@@ -55,8 +55,8 @@ struct EditorInspector: View {
                     else if tool != .hand { hint(tool.hint) }
                     InspectorSection("编辑") {
                         Button { model.fixAll() } label: {
-                            Label("固定", systemImage: "checkmark.seal").frame(maxWidth: .infinity)
-                        }.buttonStyle(.borderedProminent).controlSize(.small)
+                            Label("固定", systemImage: "checkmark.seal").frame(maxWidth: .infinity, minHeight: 28)
+                        }.buttonStyle(.borderedProminent).controlSize(.regular)
                             .disabled(!model.doc.hasEditableObjects).help("固定全部，可用 ⌘Z 撤销（⇧⌘F）")
                     }
                 }
@@ -64,7 +64,7 @@ struct EditorInspector: View {
             Divider()
             Text(model.selectedAnnotation != nil ? "标注可随时调整" : "Hoot · 截图与标注")
                 .font(.system(size: 10)).foregroundStyle(.tertiary).frame(height: EditorStyle.footerHeight)
-        }.background(EditorStyle.panel)
+        }.background(EditorMaterial().overlay(EditorStyle.panel.opacity(0.48)))
             .onChange(of: focusedDimension) { old, next in if old != next, let old { commit(old) } }
             .onChange(of: model.selectedAnnotation?.id) { _, _ in drafts.removeAll() }
     }
@@ -294,8 +294,8 @@ struct EditorInspector: View {
                     }.controlSize(.small)
                 }
                 Text("四边预留 0～100 像素，自动记住设置").font(.system(size: 10)).foregroundStyle(.tertiary)
-                Button("确认裁剪并复制 ↩") { model.canvas?.confirmCrop() }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(model.canvas?.activeSelectionRect == nil)
+                Button { model.canvas?.confirmCrop() } label: { Text("确认裁剪并复制 ↩").frame(maxWidth: .infinity, minHeight: 28) }
+                    .buttonStyle(.bordered).controlSize(.regular).disabled(model.canvas?.activeSelectionRect == nil)
             }
         }
     }

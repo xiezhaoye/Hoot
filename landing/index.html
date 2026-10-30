@@ -15,7 +15,7 @@
   <meta property="og:title" content="Hoot — 截图、看图、编辑，在 Mac 上一气呵成">
   <meta property="og:description" content="受 PicPick 启发，为 macOS 原生打造。免费使用，MIT 开源。">
   <meta property="og:url" content="https://hoot.xiezhaoye.site/">
-  <meta property="og:image" content="https://hoot.xiezhaoye.site/assets/hoot-editor.jpg">
+  <meta property="og:image" content="https://hoot.xiezhaoye.site/assets/editor-demo.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
   <script src="site.js" defer></script>
@@ -36,7 +36,7 @@
     <div class="hero-actions"><a class="button primary" href="https://hoot-dl.xiezhaoye.site/Hoot-{{VERSION}}-macos-arm64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>下载 macOS 版</a><a class="button secondary" href="https://github.com/xiezhaoye/Hoot">在 GitHub 查看 <span aria-hidden="true">↗</span></a></div>
     <p class="compatibility">v{{VERSION}} 预览版 <span>·</span> macOS 15+ <span>·</span> Apple Silicon</p>
     <figure class="hero-product">
-      <button class="screenshot-button" data-preview="assets/hoot-editor.jpg" data-caption="Hoot 原生编辑界面，画布中为用户提供的标注示例" aria-label="放大查看 Hoot 编辑界面"><img class="product-image" src="assets/hoot-editor.jpg" width="3032" height="1872" alt="Hoot 编辑界面：标注画布与工具栏，右侧颜色、描边、填充、圆角和尺寸检查器及截图历史" fetchpriority="high"></button>
+      <button class="screenshot-button" data-preview="assets/editor-demo.png" data-caption="Hoot 原生编辑界面，画布内容为虚构示例" aria-label="放大查看 Hoot 编辑界面"><img class="product-image" src="assets/editor-demo.png" width="2560" height="1600" alt="Hoot 编辑界面：虚构的周报、工具栏、图像检查器和截图历史" fetchpriority="high"></button>
       <figcaption>你熟悉的 Mac 界面。截图之后，直接开始编辑。<span>点击查看大图 <span aria-hidden="true">↗</span></span></figcaption>
     </figure>
     <div class="capability-strip"><span>Swift 原生界面</span><span>本地截图历史</span><span>Vision 本地识字</span><span>快捷键随手调用</span></div>
@@ -46,7 +46,16 @@
     <div class="workflow">
       <article><span class="step">01</span><h3>想截哪里，就截哪里。</h3><p>用全局快捷键唤起截图，框选区域，或悬停选择控件、面板和窗口。滚轮 / Tab 切换范围，也可以设置透明圆角。支持多屏幕与 Retina。</p><div class="keyboard"><kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd><span>随时开始截图</span></div></article>
       <article><span class="step">02</span><h3>重点，画出来。</h3><p>箭头、矩形、文字、序号、荧光笔；需要隐藏的信息，用马赛克或模糊。选中标注后，还能继续调整。</p><p class="small-note">颜色 · 线宽 · 填充 · 透明度 · 圆角 · 阴影</p></article>
-      <article><span class="step">03</span><h3>编辑完，接着用。</h3><p>用 ⌘S 固定全部对象并保存，也可以复制、系统分享或钉在桌面。固定后仍能撤销，重新调整对象；编辑草稿留在本地，重启后继续。</p><div class="keyboard"><kbd>⌃</kbd><kbd>⌥</kbd><kbd>P</kbd><span>钉住剪贴板图片</span></div></article>
+      <article><span class="step">03</span><h3>编辑完，接着用。</h3><p>用 ⌘S 固定全部对象并保存，也可以复制、制作带背景的图片或钉在桌面。固定后仍能撤销，重新调整对象；编辑草稿留在本地，重启后继续。</p><div class="keyboard"><kbd>⌃</kbd><kbd>⌥</kbd><kbd>P</kbd><span>钉住剪贴板图片</span></div></article>
+    </div>
+  </section>
+  <section class="section wrap product-demos" aria-label="产品功能示例">
+    <div class="section-heading"><p class="eyebrow">从选区到分享</p><h2>截图之后，<br>还有很多事可以做。</h2><p>下面使用虚构的项目周报演示实际界面和输出效果。</p></div>
+    <div class="demo-grid">
+      <article class="demo-wide"><img src="assets/selection-demo.png" alt="Hoot 选中周报区域，右侧显示背景模板和复制保存按钮" loading="lazy"><h3>选区保持可编辑</h3><p>选中后继续移动、缩放、复制和粘贴；也可以为选区设置背景、留白、圆角和阴影。</p></article>
+      <article class="demo-phone"><img src="assets/mobile-demo.png" alt="项目周报经 Hoot 重新排版后的手机文字图片" loading="lazy"><div><h3>为手机重新排版</h3><p>提取截图中的文字并保留段落，生成随内容高度变化的竖版图片。当前只处理文字，图片、表格和代码不会保留。</p></div></article>
+      <article class="demo-wide"><img src="assets/browse-demo.png" alt="Hoot 按文件夹浏览虚构的示例图片" loading="lazy"><h3>浏览图片，也直接编辑</h3><p>从本地文件夹浏览图片，选中后送入编辑器，原文件保持完整。</p></article>
+      <article class="demo-copy"><img src="assets/ocr-demo.png" alt="Hoot 显示虚构周报的本地文字识别结果" loading="lazy"><h3>文字、翻译和链接，截图就能用</h3><p>截图后直接识别或翻译文字；二维码中的信息也能提取，识别到 URL 时可直接打开。</p><p>文字识别在本机完成。使用自己配置的大模型翻译时，识别出的文字会发送到所配置的服务。</p></article>
     </div>
   </section>
   <section class="editing-section" data-screen-label="标注效果展示">
@@ -65,7 +74,7 @@
   </section>
   <section class="story-section" id="story" data-screen-label="开发初衷"><div class="wrap story-layout"><img src="assets/logo.png?v=20261030b" width="112" height="112" alt="Hoot 猫头鹰 Logo" loading="lazy"><div><p class="eyebrow">为什么做 Hoot</p><blockquote>“想把 Windows 上用 PicPick<br class="desktop-break">截图和编辑的顺手体验，带到 Mac。”</blockquote><p>这是 Hoot 的起点。用 Swift 和 macOS 原生框架，从截图、看图和编辑这些每天都会做的小事开始，一点点打磨自己的答案。</p><p class="author"><a href="https://github.com/xiezhaoye">xiezhaoye <span aria-hidden="true">↗</span></a><span>Hoot 作者</span></p><p class="attribution">灵感来自 <a href="https://picpick.app/" rel="noopener">PicPick</a>。Hoot 是独立开发的应用，非 PicPick 官方 macOS 版本。</p></div></div></section>
   <section class="section wrap release-overview" id="updates" data-screen-label="当前版本与常用快捷键">
-    <div><p class="eyebrow">当前公开预览版 · {{VERSION}}</p><h2>版本与使用说明。</h2><ul class="release-points"><li>更新猫头鹰取景框品牌图，应用与官网视觉一致。</li><li>主窗口 logo 与名称更紧凑，与红黄绿按钮同排显示。</li><li>品牌图支持系统深浅色，清晰适配 Retina 显示。</li><li>保留截图浮层编辑、分享模板与手机文字排版功能。</li></ul><a class="release-detail" href="https://github.com/xiezhaoye/Hoot/releases/tag/v{{VERSION}}">查看 {{VERSION}} 更新记录 ↗</a></div>
+    <div><p class="eyebrow">当前公开预览版 · {{VERSION}}</p><h2>版本与使用说明。</h2><ul class="release-points"><li>优化编辑器材质、检查器按钮和截图 / 浏览切换。</li><li>设置窗口采用更清晰的分类与内容布局。</li><li>Dock 图标简化为取景框，修复关于页面图标显示。</li><li>支持分享模板及适合手机阅读的文字排版。</li></ul><a class="release-detail" href="https://github.com/xiezhaoye/Hoot/releases/tag/v{{VERSION}}">查看 {{VERSION}} 更新记录 ↗</a></div>
     <div class="shortcut-panel"><h3>常用快捷键</h3><dl><div><dt>开始截图</dt><dd><kbd>⌃⌥A</kbd></dd></div><div><dt>钉住剪贴板图片</dt><dd><kbd>⌃⌥P</kbd></dd></div><div><dt>固定全部对象</dt><dd><kbd>⇧⌘F</kbd></dd></div><div><dt>固定全部并保存</dt><dd><kbd>⌘S</kbd></dd></div><div><dt>撤销</dt><dd><kbd>⌘Z</kbd></dd></div><div><dt>重做</dt><dd><kbd>⇧⌘Z</kbd></dd></div></dl><p>以上为默认快捷键，截图快捷键可在设置中修改。保存前的区块和标注可继续调整，固定操作也支持撤销。</p></div>
   </section>
   <section class="section wrap faq-section" data-screen-label="常见问题"><div class="section-heading"><p class="eyebrow">开始之前</p><h2>你可能想知道。</h2></div><div class="faq">

@@ -32,23 +32,37 @@ struct SettingsView: View {
         directoryNote = "已复制现有截图，重启 Hoot 后生效"
     }
 
+    private var categoryDescription: String {
+        switch category {
+        case "通用": return "截图、存储和界面的常规选项。"
+        case "快捷键": return "设置截图和保存时使用的快捷键。"
+        case "识字与翻译": return "配置文字识别与翻译服务。"
+        default: return "查看版本信息和软件更新。"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach([("通用", "slider.horizontal.3"), ("快捷键", "keyboard"), ("识字与翻译", "translate"), ("关于与更新", "info.circle")], id: \.0) { title, icon in
+                ForEach([("通用", "gearshape"), ("快捷键", "keyboard"), ("识字与翻译", "translate"), ("关于与更新", "info.circle")], id: \.0) { title, icon in
                     Button { category = title } label: {
                         HStack(spacing: 10) {
                             Image(systemName: icon).resizable().scaledToFit().frame(width: 18, height: 18).frame(width: 22, height: 22)
-                            Text(title).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
-                        }.foregroundStyle(Color.primary.opacity(0.78))
-                            .padding(.horizontal, 10).frame(height: 42).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(category == title ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            Text(title).font(.system(size: 14, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading)
+                        }.foregroundStyle(Color.primary.opacity(0.88))
+                            .padding(.horizontal, 12).frame(height: 42).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(category == title ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9))
                             .contentShape(RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(.plain).focusEffectDisabled()
                 }
                 Spacer()
-            }.padding(14).frame(width: 158).background(.bar)
-            Divider()
+            }.padding(.horizontal, 14).padding(.vertical, 18).frame(width: 184)
+                .background(Color(nsColor: .controlBackgroundColor))
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(category).font(.system(size: 21, weight: .semibold))
+                    Text(categoryDescription).font(.system(size: 13)).foregroundStyle(.secondary)
+                }.padding(.horizontal, 30).padding(.top, 25).padding(.bottom, 16)
             Form {
             if category == "通用" {
             Section("截图") {
@@ -150,7 +164,7 @@ struct SettingsView: View {
             if category == "关于与更新" {
                 Section("Hoot") {
                     HStack(spacing: 14) {
-                        Image(nsImage: NSApplication.shared.applicationIconImage).renderingMode(.template).resizable().foregroundStyle(.primary).frame(width: 64, height: 64)
+                        Image(nsImage: NSApplication.shared.applicationIconImage).renderingMode(.original).resizable().scaledToFit().frame(width: 64, height: 64)
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Hoot").font(.title2.bold())
                             Text("版本 \(UpdateManager.version)（\(UpdateManager.build)）").foregroundStyle(.secondary)
@@ -173,8 +187,10 @@ struct SettingsView: View {
                     if let notes = updater.available?.body { Text(notes).font(.caption).textSelection(.enabled) }
                 }
             }
-            }.formStyle(.grouped).frame(maxWidth: .infinity)
-        }.frame(width: 740, height: 650)
+            }.formStyle(.columns).padding(.horizontal, 30).padding(.bottom, 20).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(nsColor: .windowBackgroundColor))
+        }.frame(width: 820, height: 680)
     }
 
     private func test() {
