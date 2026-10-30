@@ -8,6 +8,8 @@
 
 ## 1. 产品定位
 
+主窗口左上角使用猫头鹰取景框 + hoot 的原品牌组合图(`Resources/brand-lockup.pdf`),按系统深浅色切换前景色;打包脚本必须包含该资源。
+
 macOS 原生（Swift）的截图 / 标注 / 看图工具，类似 PicPick。后续计划继续加：录屏、视频剪辑、本地图传。吉祥物是一只猫头鹰（图标已做，`Resources/AppIcon.icns`）。
 
 - 平台：macOS 15+，Apple Silicon，Swift 5 语言模式，SwiftPM（tools 6.0）。

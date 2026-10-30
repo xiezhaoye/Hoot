@@ -150,7 +150,7 @@ struct SettingsView: View {
             if category == "关于与更新" {
                 Section("Hoot") {
                     HStack(spacing: 14) {
-                        Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 64, height: 64)
+                        Image(nsImage: NSApplication.shared.applicationIconImage).renderingMode(.template).resizable().foregroundStyle(.primary).frame(width: 64, height: 64)
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Hoot").font(.title2.bold())
                             Text("版本 \(UpdateManager.version)（\(UpdateManager.build)）").foregroundStyle(.secondary)

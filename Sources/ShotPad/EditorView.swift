@@ -96,7 +96,15 @@ struct EditorView: View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
                 EditorTrafficLights().frame(width: 88, height: 47)
-                Text("Hoot").font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary.opacity(0.8))
+                if let brand = EditorStyle.brandLockup {
+                    Image(nsImage: brand).renderingMode(.template)
+                        .resizable().scaledToFit()
+                        .frame(width: 72, height: 22)
+                        .foregroundStyle(.primary)
+                        .accessibilityLabel("Hoot")
+                } else {
+                    Text("Hoot").font(.system(size: 15, weight: .semibold))
+                }
                 Spacer(minLength: 0)
             }
             .frame(width: EditorStyle.sidebarWidth, height: 47)

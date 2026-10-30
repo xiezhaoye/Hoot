@@ -3,6 +3,12 @@ import SwiftUI
 import ShotPadCore
 
 enum EditorStyle {
+    static let brandLockup: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "brand-lockup", withExtension: "pdf"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = true
+        return image
+    }()
     static let footerHeight: CGFloat = 36
     static let sidebarWidth: CGFloat = 224
     static let inspectorWidth: CGFloat = 228

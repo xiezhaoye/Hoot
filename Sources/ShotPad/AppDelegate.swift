@@ -2,6 +2,18 @@ import AppKit
 import SwiftUI
 import ShotPadCore
 
+/// Draw the supplied transparent artwork directly in the live Dock tile.
+private final class HootDockIcon: NSView {
+    private let image: NSImage
+    init(image: NSImage) { self.image = image; super.init(frame: NSRect(x: 0, y: 0, width: 128, height: 128)); autoresizingMask = [.width, .height] }
+    required init?(coder: NSCoder) { nil }
+    override var isOpaque: Bool { false }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill(); bounds.fill(using: .copy)
+        image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+    }
+}
+
 @MainActor
 final class EditorWindowController: NSObject, NSWindowDelegate {
     let window: NSWindow
@@ -84,6 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let history = HistoryStore(directory: Settings.historyDirectory, limit: Settings.historyLimit)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let image = Bundle.main.image(forResource: "logo") {
+            NSApp.applicationIconImage = image
+            NSApp.dockTile.contentView = HootDockIcon(image: image)
+            NSApp.dockTile.display()
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Hoot")
         statusItem.menu = makeMenu()
