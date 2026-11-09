@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreML
 import Foundation
 import Vision
 
@@ -14,13 +15,46 @@ public struct RecognizedLine: Sendable {
 }
 
 public enum TextRecognizer {
+    /// 本进程内记住「ANE 路径失败过」，后续直接走 CPU。
+    /// **只存在内存里，不写用户偏好**：这可能只是系统的临时抖动
+    /// （实测同一台机器上一次 E5RT 失败后，下次又正常），不值得永久降级。
+    /// 识别会在多个后台任务里并发调用，用锁保护这个标记。
+    private static let cpuLock = NSLock()
+    private static var _prefersCPU = false
+    private static var prefersCPU: Bool {
+        get { cpuLock.lock(); defer { cpuLock.unlock() }; return _prefersCPU }
+        set { cpuLock.lock(); _prefersCPU = newValue; cpuLock.unlock() }
+    }
+
     /// Blocking; call from a background queue.
+    ///
+    /// Vision 默认把文字识别模型编译到神经引擎（ANE）上跑。macOS 上这一步偶发
+    /// 失败，系统会打 `E5RT Error: ...precompiled_compute_operation... (Code: 13)`
+    /// 并让整个请求抛错——在用户眼里就是「提取文字失败」。模型和图片都是好的，
+    /// 换到 CPU 就能跑通（实测 2654×1830 的图 CPU 0.54s、ANE 首次编译要 90s+），
+    /// 所以这里失败后回退 CPU，并记住这个选择，别再让用户白等。
     public static func recognize(_ image: CGImage) throws -> [RecognizedLine] {
+        if prefersCPU { return try perform(image, device: cpuDevice) }
+        do {
+            return try perform(image, device: nil)
+        } catch {
+            prefersCPU = true
+            return try perform(image, device: cpuDevice)
+        }
+    }
+
+    /// 从系统列表里取 CPU 设备：`MLComputeDevice.cpu` 的关联值无法公开构造。
+    private static var cpuDevice: MLComputeDevice? {
+        MLComputeDevice.allComputeDevices.first { if case .cpu = $0 { return true } else { return false } }
+    }
+
+    private static func perform(_ image: CGImage, device: MLComputeDevice?) throws -> [RecognizedLine] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
         request.automaticallyDetectsLanguage = true
         request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+        if let device { request.setComputeDevice(device, for: .main) }
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
         let w = CGFloat(image.width), h = CGFloat(image.height)
         return (request.results ?? []).compactMap { obs in

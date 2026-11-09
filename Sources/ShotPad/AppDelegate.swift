@@ -318,7 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let actions = QuickActions(
             copyText: { [weak self] report in
                 let shot = current()
-                self?.finishCapture(shot)
+                // 不要把图片写进剪贴板：用户点的是「文字」，要的是文字。
+                // 以前这里会把截图写进去，一旦识别失败，剪贴板里就留着截图，
+                // 用户粘贴出来是图而不是文字（看起来像「识别成功但是 paste 错了」）。
+                self?.finishCapture(shot, copyingImage: false)
                 Task { @MainActor in
                     do {
                         let text = try await TextTools.extractText(shot.image)
@@ -326,7 +329,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
                         report("已复制 \(text.count) 字")
-                    } catch { report("识别失败") }
+                    } catch {
+                        report("识别失败")
+                        // 快捷条点完就消失，只剩一声提示音。失败时必须把原因显式说出来，
+                        // 否则用户只听到“失败”却不知道是图片没文字、还是系统 OCR 出问题。
+                        let alert = NSAlert()
+                        alert.messageText = "提取文字失败"
+                        alert.informativeText = error.localizedDescription
+                        alert.addButton(withTitle: "好")
+                        alert.runModal()
+                    }
                 }
             },
             openURL: { [weak self] report in
